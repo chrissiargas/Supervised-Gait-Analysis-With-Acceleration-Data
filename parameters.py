@@ -1,0 +1,21 @@
+sl_params = {
+    'cleaner': 'linear',
+    'include_gravity': False,
+    'new_features': ['norm_xyz', 'jerk'],
+    'filter': None,
+    'filter_window': 3,
+    'rescaler': 'standard',
+    'parameters': ['left_stance', 'right_stance'],
+    'task': 'gait_phases',
+    'duration': 2,
+    'stride': 1,
+    'features': ['acc_x', 'acc_y', 'acc_z', 'norm_xyz', 'jerk'],
+    'augmentations': None,
+    'batch_size': 64,
+    'architecture': 'attention',
+    'optimizer': 'adam',
+    'epochs': 250,
+    'decay_steps': 0,
+    'lr_decay': None,
+    'learning_rate': 0.0001
+}

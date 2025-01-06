@@ -1,0 +1,53 @@
+data_args:
+  path: datasets
+  fs: 50
+  activities:
+  - walking
+  position: Wrist
+
+main_args:
+  load_data: false
+
+  cleaner: linear
+  include_gravity: false
+  new_features:
+  - norm_xyz
+  - jerk
+  filter:
+  filter_window: 3
+  rescaler: standard
+  parameters:
+  - left_stance
+  - right_stance
+  task: gait_phases
+
+  split_type: loso  # loso, start, end
+  test_hold_out: [5]
+  validation: false
+  val_hold_out: 1
+
+  duration: 2 # seconds
+  stride: 1    # seconds
+
+  features: # List(norm_xyz, norm_xy, norm_yz, norm_xz, jerk, grav_x, grav_y, grav_z)
+  - acc_x
+  - acc_y
+  - acc_z
+  - norm_xyz
+  - jerk
+  augmentations: # List(rotate, jitter, scale)
+  batch_size: 64
+
+  architecture: attention
+  optimizer: adam
+  epochs: 250
+  learning_rate: 0.0001
+
+  metrics:
+  - f1
+  - accuracy
+  - precision
+  - recall
+
+
+
