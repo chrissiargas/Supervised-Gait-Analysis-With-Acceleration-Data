@@ -55,11 +55,11 @@ def add_jerk(x: pd.DataFrame, fillna: bool = True) -> pd.DataFrame:
     return x
 
 
-def add_grav(x: pd.DataFrame, fs: int, direction: str) -> pd.DataFrame:
+def add_low(x: pd.DataFrame, fs: int, direction: str) -> pd.DataFrame:
     x = x.copy()
     x = x.interpolate()
 
-    cutoff = 1.
+    cutoff = 2.
 
     if direction == 'x':
         acc = 'acc_x'
@@ -72,6 +72,21 @@ def add_grav(x: pd.DataFrame, fs: int, direction: str) -> pd.DataFrame:
 
     groups = x.groupby(['subject', 'activity'])
     low = groups[acc].transform(lambda g: butter_lowpass_filter(g, cutoff, fs / 2))
-    x['grav_' + direction] = low
+    x['low_' + direction] = low
 
     return x
+
+def add_azimuth(x: pd.DataFrame) -> pd.DataFrame:
+    x = x.copy()
+
+    x['az_angle'] = np.arctan2(x['acc_y'], x['acc_x'])
+
+    return x
+
+def add_elevation(x: pd.DataFrame) -> pd.DataFrame:
+    x = x.copy()
+
+    x['el_angle'] = np.arctan2(x['acc_z'], np.sqrt(x['acc_x'] ** 2 + x['acc_y'] ** 2))
+
+    return x
+

@@ -7,6 +7,7 @@ from keras.layers import (Input, LSTM, Conv2D, Conv1D, Dense,
 from keras.models import Model
 from keras import initializers
 import keras.backend as K
+from keras.src.layers import concatenate
 from tcn import TCN
 import keras
 
@@ -26,8 +27,9 @@ def conv1D_Block(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3
     )
     norm = BatchNormalization(name = 'Norm_' + str(n))
     relu = ReLU(name='ReLU_' + str(n))
-    dropout = Dropout(rate=0.2, name='Dropout_' + str(n))
+    dropout = Dropout(rate=0.3, name='Dropout_' + str(n))
     pooling = MaxPooling1D(2, strides=2, name='MaxPooling_' + str(n))
+
 
     x = padding(inputs)
     x = conv1D(x)
@@ -40,18 +42,99 @@ def conv1D_Block(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3
 
     return x
 
-def get_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
+def conv1D_Block2(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3, filters: int = 64, use_pooling: bool = True):
+
+    conv1D = Conv1D(
+        filters=filters,
+        kernel_size=kernel_size,
+        strides=1,
+        padding='same',
+        kernel_initializer=initializers.he_uniform()
+    )
+    norm = BatchNormalization()
+    relu = ReLU()
+
+    dropout = Dropout(rate=0.3)
+    pooling = MaxPooling1D(2, strides=2)
+
+    x = conv1D(inputs)
+    x = norm(x)
+    x = relu(x)
+
+    conv1D = Conv1D(
+        filters=filters,
+        kernel_size=kernel_size,
+        strides=1,
+        padding='same',
+        kernel_initializer=initializers.he_uniform()
+    )
+    norm = BatchNormalization()
+    relu = ReLU()
+
+    x = conv1D(x)
+    x = norm(x)
+    x= relu(x)
+
+    if use_dropout:
+        x = dropout(x)
+    if use_pooling:
+        x = pooling(x)
+
+    return x
+
+def get_CNN_encoder(input_shape) -> Model:
     inputs = Input(shape=input_shape)
     x = inputs
 
-    filters = [32, 64, 64, 128]
+    filters = [64, 64, 64, 64]
     kernels = [3, 3, 3, 3]
-    pooling = [True, True, False, False]
+    pooling = [True, True, True, False]
     dropout = [True, True, True, True]
 
     for i in range(len(filters)):
-        x = conv1D_Block(x, i+ 1, filters=filters[i], kernel_size=kernels[i],
+        x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
                          use_pooling=pooling[i], use_dropout=dropout[i])
+
+    x = Bidirectional(LSTM(32, activation='relu'))(x)
+    x = Flatten()(x)
+
+    return Model(inputs, x)
+
+def get_fft_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
+    t_inputs = Input(shape=input_shape[0])
+    fft_inputs = Input(shape=input_shape[1])
+
+    t_encoder = get_CNN_encoder(input_shape[0])
+    fft_encoder = get_CNN_encoder(input_shape[1])
+
+    t_encodings = t_encoder(t_inputs)
+    fft_encodings = fft_encoder(fft_inputs)
+
+    encodings = concatenate((t_encodings, fft_encodings), axis=-1)
+
+    return Model((t_inputs, fft_inputs), encodings, name=name)
+
+def get_CNN_encoder2(input_shape, name: str = 'CNN_encoder') -> Model:
+    inputs = Input(shape=input_shape)
+    x = inputs
+
+    filters = [32, 64, 128, 256]
+    kernels = [3, 3, 3, 3]
+    pooling = [True, True, True, False]
+    dropout = [True, True, True, True]
+
+    for i in range(len(filters)):
+        x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
+                         use_pooling=pooling[i], use_dropout=dropout[i])
+
+    attention_data = keras.layers.Lambda(lambda x: x[:,:,:128])(x)
+    attention_softmax = keras.layers.Lambda(lambda x: x[:,:,128:])(x)
+
+    attention_softmax = keras.layers.Softmax()(attention_softmax)
+    x = keras.layers.Multiply()([attention_softmax,attention_data])
+
+    x = keras.layers.Dense(units=256,activation='sigmoid')(x)
+    x = BatchNormalization()(x)
 
     x = Flatten()(x)
 

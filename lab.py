@@ -1,29 +1,23 @@
 import tensorflow as tf
+import numpy as np
+import matplotlib.pyplot as plt
+from preprocessing.building import builder
 
-def check_gpu():
-    print("TensorFlow Version:", tf.__version__)
+b = builder()
+data, _, _ = b()
 
-    # List all devices
-    devices = tf.config.list_physical_devices()
-    print("Physical devices:")
-    for device in devices:
-        print(device)
+for batch in data.take(1):
+    X, Y = batch
 
-    # Check if GPU is available
-    if tf.config.list_physical_devices('GPU'):
-        print("GPU is available")
-    else:
-        print("GPU is not available")
+    print(X.shape)
+    x = X[0, :, 0]
 
-    # Test TensorFlow GPU operation
-    try:
-        with tf.device('/GPU:0'):  # Specify GPU device
-            a = tf.constant([1.0, 2.0, 3.0, 4.0])
-            b = tf.constant([2.0, 2.0, 2.0, 2.0])
-            c = a + b
-            print("TensorFlow can run on GPU")
-            print("Result of GPU operation:", c.numpy())
-    except RuntimeError as e:
-        print("Error using GPU:", e)
+    plt.plot(x)
+    plt.show()
 
-check_gpu()
+    sp = np.fft.fft(x)
+    power_fft = np.abs(sp)
+    print(power_fft.shape)
+
+    plt.plot(power_fft)
+    plt.show()

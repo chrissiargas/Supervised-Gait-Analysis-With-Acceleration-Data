@@ -69,7 +69,7 @@ def form_t(x: pd.DataFrame, length: int, step: int, start: int) -> np.ndarray:
 def form(x: pd.DataFrame, length: int, step: int, start: int, task: str, get_events: bool = False):
     x = x.copy()
 
-    x_cols = x.columns[x.columns.str.contains('acc|jerk|grav|norm')]
+    x_cols = x.columns[x.columns.str.contains('acc|jerk|low|norm|angle')]
     groups = x.groupby(['subject', 'activity'])
     x_segs = groups.apply(lambda g: segment(g[x_cols], length, step, start))
     x_segs = np.concatenate(x_segs.values)

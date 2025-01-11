@@ -16,7 +16,7 @@ from preprocessing.resampling import resample
 from preprocessing.utils import impute, remove_g, produce, smooth, rescale, get_parameters
 from preprocessing.splitting import split
 from preprocessing.segments import finalize
-from preprocessing.transformations import transformer
+from preprocessing.transformations import transformer, fft_transformer
 
 seed = 45
 figpath = os.path.join('archive', 'figures')
@@ -36,7 +36,7 @@ def plot_signal(x: pd.DataFrame, pos: str, subject: int = 5,
     x = x[x['subject'] == subject]
 
     positions = pd.unique(x['position'])
-    features = x.columns[x.columns.str.contains("acc|norm|jerk|grav")]
+    features = x.columns[x.columns.str.contains("acc|norm|jerk|low|angle")]
     all_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
 
     if pos in positions:
@@ -208,18 +208,31 @@ class builder:
 
     def generate(self, S: Tuple[np.ndarray, np.ndarray, np.ndarray], training: bool = True):
         X, Y, _ = S
-
+        output_shape = () if self.output_shape == 1 else self.output_shape
         def gen():
             for x, y in zip(X, Y):
-                x = self.transformer(x, training)
-                y = tf.convert_to_tensor(y, dtype=tf.float32)
-                yield x, y
+                x_ = self.transformer(x, training)
+                y_ = tf.convert_to_tensor(y, dtype=tf.float32)
+                y_ = tf.squeeze(y_)
 
-        return tf.data.Dataset.from_generator(
-            gen,
-            output_types=(tf.float32, tf.float32),
-            output_shapes=(self.input_shape, self.output_shape)
-        )
+                if self.conf.fft:
+                    x_fft = self.fft_transformer(x, training)
+                    yield (x_, x_fft), y_
+                else:
+                    yield x_, y_
+
+        if self.conf.fft:
+            return tf.data.Dataset.from_generator(
+                gen,
+                output_types=((tf.float32, tf.float32), tf.float32),
+                output_shapes=((self.input_shape, self.fft_input_shape), output_shape),
+            )
+        else:
+            return tf.data.Dataset.from_generator(
+                gen,
+                output_types=(tf.float32, tf.float32),
+                output_shapes=(self.input_shape, output_shape)
+            )
 
     def batch_prefetch(self, train, test, val):
         train = train.shuffle(1000).repeat().batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
@@ -267,7 +280,9 @@ class builder:
 
     def get_transformers(self):
         self.transformer = transformer()
+        self.fft_transformer = fft_transformer()
         self.input_shape = self.transformer.get_shape()
+        self.fft_input_shape = self.fft_transformer.get_shape()
 
     def preprocess(self, verbose: bool = False):
         data = self.data.copy()
@@ -275,8 +290,8 @@ class builder:
 
         if verbose:
             position = self.info.pos_pairs[self.conf.position]
-            subject = 6
-            start = 10000
+            subject = 15
+            start = 5000
 
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)
@@ -291,12 +306,12 @@ class builder:
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)
 
-        data = produce(data, self.conf.new_features, self.conf.fs)
+        data = smooth(data, self.conf.filter, self.conf.filter_window, self.conf.fs, self.conf.filter_cutoff)
 
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)
 
-        data = smooth(data, self.conf.filter, self.conf.filter_window)
+        data = produce(data, self.conf.new_features, self.conf.fs)
 
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)

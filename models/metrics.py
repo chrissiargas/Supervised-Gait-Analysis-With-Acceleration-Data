@@ -13,11 +13,15 @@ import sys
 import time
 
 def binary_accuracies(data):
-    return [binary_accuracy_class(i, name) for i, name in zip(range(data.output_shape), data.classes)]
+    return [binary_accuracy_class(i, name, data.output_shape==1) for i, name in zip(range(data.output_shape), data.classes)]
 
-def binary_accuracy_class(class_index, class_name):
+
+def binary_accuracy_class(class_index, class_name, one_dim=False):
     def metric(y_true, y_pred):
+        if one_dim:
+            return binary_accuracy(y_true, y_pred)
         return binary_accuracy(y_true[:, class_index], y_pred[:, class_index])
+
     metric.__name__ = f"accuracy_{class_name}"
     return metric
 
@@ -48,10 +52,13 @@ class Metrics(Callback):
 
         if 'accuracy' in self.in_scores:
             pred_ =  np.where(pred > 0.5, 1, 0).squeeze()
-            class_accuracies = [accuracy_score(y, y_) for y, y_ in zip(true.T, pred_.T)]
-            accuracy = np.mean(class_accuracies)
+            if self.n_labels > 1:
+                class_accuracies = [accuracy_score(y, y_) for y, y_ in zip(true.T, pred_.T)]
+                accuracy = np.mean(class_accuracies)
+                self.scores['class_accuracy'] = ['{:.4f}'.format(x) for x in class_accuracies]
+            elif self.n_labels == 1:
+                accuracy = accuracy_score(true, pred_)
 
-            self.scores['class_accuracy'] = ['{:.4f}'.format(x) for x in class_accuracies]
             self.scores['accuracy'] = '{:.4f}'.format(accuracy)
 
         if 'binary_crossentropy' in self.in_scores:
@@ -61,37 +68,45 @@ class Metrics(Callback):
 
         if 'f1_score' in self.in_scores:
             pred_ =  np.where(pred > 0.5, 1, 0).squeeze()
-            class_f1_scores = [f1_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
-            F1_score = f1_score(true, pred_, average=self.average)
 
-            self.scores['class_f1_score'] = ['{:.4f}'.format(x) for x in class_f1_scores]
+            if self.n_labels > 1:
+                class_f1_scores = [f1_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
+                self.scores['class_f1_score'] = ['{:.4f}'.format(x) for x in class_f1_scores]
+
+            F1_score = f1_score(true, pred_, average=self.average)
             self.scores['f1_score'] = '{:.4f}'.format(F1_score)
 
         if 'precision' in self.in_scores:
             pred_ = np.where(pred > 0.5, 1, 0).squeeze()
-            class_precisions = [precision_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
-            precision = precision_score(true, pred_, average=self.average)
 
-            self.scores['class_precision'] = ['{:.4f}'.format(x) for x in class_precisions]
+            if self.n_labels > 1:
+                class_precisions = [precision_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
+                self.scores['class_precision'] = ['{:.4f}'.format(x) for x in class_precisions]
+
+            precision = precision_score(true, pred_, average=self.average)
             self.scores['precision'] = '{:.4f}'.format(precision)
 
         if 'recall' in self.in_scores:
             pred_ = np.where(pred > 0.5, 1, 0).squeeze()
-            class_recalls = [recall_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
+
+            if self.n_labels > 1:
+                class_recalls = [recall_score(y, y_, average='binary') for y, y_ in zip(true.T, pred_.T)]
+                self.scores['class_recall'] = ['{:.4f}'.format(x) for x in class_recalls]
+
             recall = recall_score(true, pred_, average=self.average)
-
-            self.scores['class_recall'] = ['{:.4f}'.format(x) for x in class_recalls]
             self.scores['recall'] = '{:.4f}'.format(recall)
-
-
 
     def get_metrics(self):
         total_size = self.batch_size * self.steps
         step = 0
 
         if self.multi_label:
-            pred = np.zeros((total_size, self.n_labels), dtype=np.float32)
-            true = np.zeros((total_size, self.n_labels), dtype=np.float32)
+            if self.n_labels > 1:
+                pred = np.zeros((total_size, self.n_labels), dtype=np.float32)
+                true = np.zeros((total_size, self.n_labels), dtype=np.float32)
+            elif self.n_labels == 1:
+                pred = np.zeros((total_size,), dtype=np.float32)
+                true = np.zeros((total_size,), dtype=np.float32)
 
         for batch in self.set.take(self.steps):
             X = batch[0]

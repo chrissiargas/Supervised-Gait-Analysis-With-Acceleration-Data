@@ -9,7 +9,6 @@ from experiments import *
 import tensorflow as tf
 import logging
 
-
 gpus = tf.config.list_physical_devices('GPU')
 if gpus:
     try:

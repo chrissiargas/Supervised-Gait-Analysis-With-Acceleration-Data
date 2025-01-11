@@ -12,36 +12,37 @@ main_args:
   include_gravity: false
   new_features:
   - norm_xyz
-  - jerk
-  filter:
+  - norm_xz
+  filter: lowpass
   filter_window: 3
+  filter_cutoff: 10.0
   rescaler: standard
   parameters:
-  - left_stance
   - right_stance
   task: gait_phases
+  fft: false
 
   split_type: loso  # loso, start, end
-  test_hold_out: [5]
+  test_hold_out: [5, 7, 14]
   validation: false
   val_hold_out: 1
 
-  duration: 2 # seconds
+  duration: 4 # seconds
   stride: 1    # seconds
 
-  features: # List(norm_xyz, norm_xy, norm_yz, norm_xz, jerk, grav_x, grav_y, grav_z)
+  features: # List(norm_xyz, norm_xy, norm_yz, norm_xz, jerk, low_x, low_y, low_z)
   - acc_x
   - acc_y
   - acc_z
   - norm_xyz
-  - jerk
+  - norm_xz
   augmentations: # List(rotate, jitter, scale)
   batch_size: 64
 
-  architecture: attention
+  architecture: cnn
   optimizer: adam
   epochs: 250
-  learning_rate: 0.0001
+  learning_rate: 0.001
 
   metrics:
   - f1

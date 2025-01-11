@@ -5,8 +5,10 @@ from typing import Optional, List, Tuple, Dict
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 import math
 
-from preprocessing.features import add_norm_xy, add_norm_xz, add_norm_xyz, add_norm_yz, add_jerk, add_grav
-from preprocessing.filters import butter_lowpass_filter, median_smoothing
+from preprocessing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_norm_yz,
+                                    add_jerk, add_low, add_azimuth, add_elevation)
+from preprocessing.filters import (butter_lowpass_filter, median_smoothing, lowpass_smoothing,
+                                   butter_lowpass_filter2, butter_highpass_filter)
 from preprocessing.info import info
 from preprocessing.gait_parameters import add_parameter
 
@@ -47,7 +49,7 @@ def remove_g(x: pd.DataFrame, fs: int, include_g:bool) -> pd.DataFrame:
 
     x = x.copy()
     features = x.columns[x.columns.str.contains("acc")]
-    cutoff = 1.
+    cutoff = 0.5
 
     for acc_feat in features:
         groups = x.groupby(['subject', 'activity'])
@@ -77,18 +79,24 @@ def produce(x: pd.DataFrame, features: List[str], fs: int) -> pd.DataFrame:
     if 'jerk' in features:
         x = add_jerk(x)
 
-    if 'grav_x' in features:
-        x = add_grav(x, fs, 'x')
+    if 'low_x' in features:
+        x = add_low(x, fs, 'x')
 
-    if 'grav_y' in features:
-        x = add_grav(x, fs, 'y')
+    if 'low_y' in features:
+        x = add_low(x, fs, 'y')
 
-    if 'grav_z' in features:
-        x = add_grav(x, fs, 'z')
+    if 'low_z' in features:
+        x = add_low(x, fs, 'z')
+
+    if 'azimuth' in features:
+        x = add_azimuth(x)
+
+    if 'elevation' in features:
+        x = add_elevation(x)
 
     return x
 
-def smooth(x, filter_type, w):
+def smooth(x, filter_type, w=0, fs=0, cutoff=0):
     if filter_type is None:
         return x
 
@@ -96,6 +104,9 @@ def smooth(x, filter_type, w):
 
     if filter_type == 'median':
         x = median_smoothing(x, w)
+
+    if filter_type == 'lowpass':
+        x = lowpass_smoothing(x, fs, cutoff)
 
     return x
 
@@ -105,7 +116,7 @@ def rescale(x: pd.DataFrame, how: str = 'standard') -> pd.DataFrame:
 
     x = x.copy()
 
-    features = x.columns[x.columns.str.contains("acc|norm|jerk|grav")]
+    features = x.columns[x.columns.str.contains("acc|norm|jerk|low|angle")]
 
     if how == 'min-max':
         rescaler = MinMaxScaler()

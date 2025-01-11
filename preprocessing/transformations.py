@@ -3,6 +3,54 @@ from config_parser import Parser
 from preprocessing.augmentations import add_noise, random_scale, time_mask, random_rotate
 import tensorflow as tf
 
+
+class fft_transformer:
+    def __init__(self):
+        config = Parser()
+        config.get_args()
+        self.conf = config
+
+        self.initial_features = {'acc_x': 0, 'acc_y': 1, 'acc_z': 2}
+        self.initial_features.update({k: v+3 for v, k in enumerate(self.conf.new_features)})
+
+        self.length = self.conf.length
+        self.n_features = len(self.conf.features)
+        self.type = np.float32
+
+    def get_shape(self):
+        return self.length, self.n_features
+
+    def get_type(self):
+        return self.type
+
+    def __call__(self, window: np.ndarray, augment: bool = False):
+        window = window.astype(self.type)
+        output = None
+
+        for feature in self.conf.features:
+            f_idx = self.initial_features[feature]
+            signal = window[:, f_idx]
+
+            complex_fft = np.fft.fft(signal)
+            power_fft = np.abs(complex_fft)
+            power_fft[0] = 0.
+
+            centered_power_fft = np.fft.fftshift(power_fft)
+
+            if output is None:
+                output = centered_power_fft[:, np.newaxis]
+
+            else:
+                output = np.concatenate(
+                    (output, centered_power_fft[:, np.newaxis]),
+                    axis=1
+                )
+
+        output = tf.convert_to_tensor(output, dtype = tf.float32)
+
+        return output
+
+
 class transformer:
     def __init__(self):
         config = Parser()

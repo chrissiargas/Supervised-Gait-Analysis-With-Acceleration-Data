@@ -6,7 +6,7 @@ from tensorflow.python.eager.profiler_client import monitor
 from tensorflow.python.keras.models import save_model
 from tensorflow.python.ops.distributions.categorical import Categorical
 
-from models.architectures import get_attention_encoder, get_tcn_encoder, get_CNN_encoder
+from models.architectures import get_attention_encoder, get_tcn_encoder, get_CNN_encoder, get_CNN_encoder2, get_fft_CNN_encoder
 
 from models.architectures import get_tcn_encoder
 from models.head import attach_head
@@ -42,13 +42,16 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     if config.architecture == 'cnn':
         model = get_CNN_encoder(data.input_shape)
 
+    if config.architecture == 'fft_cnn':
+        model = get_fft_CNN_encoder((data.input_shape, data.fft_input_shape))
+
     if config.architecture == 'attention':
         model = get_attention_encoder(data.input_shape)
 
     if config.architecture == 'tcn':
         model = get_tcn_encoder(data.input_shape)
 
-    model = attach_head(model, data.output_shape, [])
+    model = attach_head(model, data.output_shape, [64])
 
     if summary:
         print(model.summary())

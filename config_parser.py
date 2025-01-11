@@ -67,9 +67,11 @@ class Parser:
         self.new_features = args.main_args['new_features']
         self.filter = args.main_args['filter']
         self.filter_window = args.main_args['filter_window']
+        self.filter_cutoff = args.main_args['filter_cutoff']
         self.rescaler = args.main_args['rescaler']
         self.parameters = args.main_args['parameters']
         self.task = args.main_args['task']
+
 
         self.split_type = args.main_args['split_type']
         self.test_hold_out = args.main_args['test_hold_out']
@@ -83,6 +85,8 @@ class Parser:
 
         self.features = args.main_args['features']
         self.augmentations = args.main_args['augmentations']
+
+        self.fft = args.main_args['fft']
 
         self.batch_size = args.main_args['batch_size']
 

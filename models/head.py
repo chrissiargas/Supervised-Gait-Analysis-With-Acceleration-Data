@@ -12,6 +12,7 @@ def attach_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'f
     for i, hidden in enumerate(hidden_layers):
         x = Dense(hidden)(x)
         x = Activation('relu')(x)
+        x = Dropout(0.2)(x)
 
     x = Dense(n_units)(x)
     outputs = Activation(activation='sigmoid')(x)
