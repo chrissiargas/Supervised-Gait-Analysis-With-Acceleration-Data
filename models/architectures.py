@@ -3,7 +3,8 @@ import tensorflow as tf
 from keras.layers import (Input, LSTM, Conv2D, Conv1D, Dense,
                           Dropout, GlobalMaxPool1D, Activation, ReLU,
                           MaxPooling1D, ZeroPadding1D, Flatten, LayerNormalization, Layer,
-                          BatchNormalization, Multiply, Bidirectional, Permute, Lambda, RepeatVector)
+                          BatchNormalization, Multiply, Bidirectional, Permute, Lambda, RepeatVector,
+                          GRU)
 from keras.models import Model
 from keras import initializers
 import keras.backend as K
@@ -14,7 +15,9 @@ import keras
 from preprocessing.utils import impute
 
 
-def conv1D_Block(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3, filters: int = 64, use_pooling: bool = True):
+def conv1D_Block(inputs, n: int, use_dropout: bool = False,
+                 kernel_size: int = 3, filters: int = 64, use_pooling: bool = True,
+                 use_recurrent: bool = False):
 
     padding = ZeroPadding1D(padding=1, name='ZeroPadding_' + str(n))
     conv1D = Conv1D(
@@ -27,14 +30,19 @@ def conv1D_Block(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3
     )
     norm = BatchNormalization(name = 'Norm_' + str(n))
     relu = ReLU(name='ReLU_' + str(n))
+    lstm = Bidirectional(LSTM(filters//2, activation='tanh', return_sequences=True))
     dropout = Dropout(rate=0.3, name='Dropout_' + str(n))
     pooling = MaxPooling1D(2, strides=2, name='MaxPooling_' + str(n))
 
+    x = norm(inputs)
 
-    x = padding(inputs)
+    if use_recurrent:
+        x = lstm(x)
+
+    x = padding(x)
     x = conv1D(x)
-    x = norm(x)
     x = relu(x)
+
     if use_dropout:
         x = dropout(x)
     if use_pooling:
@@ -88,15 +96,17 @@ def get_CNN_encoder(input_shape) -> Model:
 
     filters = [64, 64, 64, 64]
     kernels = [3, 3, 3, 3]
+
+    recurrent = [False, False, False, False]
     pooling = [True, True, True, False]
     dropout = [True, True, True, True]
 
     for i in range(len(filters)):
         x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
-                         use_pooling=pooling[i], use_dropout=dropout[i])
+                         use_pooling=pooling[i], use_dropout=dropout[i], use_recurrent=recurrent[i])
 
-    x = Bidirectional(LSTM(32, activation='relu'))(x)
     x = Flatten()(x)
+    x = BatchNormalization()(x)
 
     return Model(inputs, x)
 
@@ -113,6 +123,17 @@ def get_fft_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
     encodings = concatenate((t_encodings, fft_encodings), axis=-1)
 
     return Model((t_inputs, fft_inputs), encodings, name=name)
+
+def get_CNNGRU_encoder(input_shape) -> Model:
+    inputs = Input(shape=input_shape)
+    x = inputs
+
+    x = conv1D_Block(x, 1, filters=32, kernel_size=3, use_pooling=False, use_dropout=False)
+    x = Bidirectional(GRU(32, activation='tanh', return_sequences=True))(x)
+    x = Bidirectional(GRU(32, activation='tanh', return_sequences=True))(x)
+    x = Flatten()(x)
+
+    return Model(inputs, x)
 
 def get_CNN_encoder2(input_shape, name: str = 'CNN_encoder') -> Model:
     inputs = Input(shape=input_shape)

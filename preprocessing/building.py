@@ -301,7 +301,7 @@ class builder:
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)
 
-        data = remove_g(data, self.conf.fs, self.conf.include_g)
+        data = remove_g(data, self.conf.fs, self.conf.include_g, self.conf.g_cutoff)
 
         if verbose:
             plot_signal(data, position, subject, start, 400, show_events=second_plot)

@@ -43,17 +43,16 @@ def impute(x: pd.DataFrame, how: str) -> pd.DataFrame:
 
     return x
 
-def remove_g(x: pd.DataFrame, fs: int, include_g:bool) -> pd.DataFrame:
+def remove_g(x: pd.DataFrame, fs: int, include_g:bool, g_cutoff: float) -> pd.DataFrame:
     if include_g:
         return x
 
     x = x.copy()
     features = x.columns[x.columns.str.contains("acc")]
-    cutoff = 0.5
 
     for acc_feat in features:
         groups = x.groupby(['subject', 'activity'])
-        grav = groups[acc_feat].transform(lambda g: butter_lowpass_filter(g, cutoff, fs / 2))
+        grav = groups[acc_feat].transform(lambda g: butter_lowpass_filter(g, g_cutoff, fs / 2))
         x[acc_feat] = x[acc_feat] - grav
 
     return x

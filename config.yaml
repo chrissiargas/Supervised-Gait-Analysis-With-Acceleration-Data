@@ -10,15 +10,17 @@ main_args:
 
   cleaner: linear
   include_gravity: false
+  gravity_cutoff: 0.5
   new_features:
   - norm_xyz
-  - norm_xz
+  - norm_xy
+  - elevation
   filter: lowpass
   filter_window: 3
   filter_cutoff: 10.0
   rescaler: standard
   parameters:
-  - right_stance
+  - left_stance
   task: gait_phases
   fft: false
 
@@ -35,7 +37,8 @@ main_args:
   - acc_y
   - acc_z
   - norm_xyz
-  - norm_xz
+  - norm_xy
+  - elevation
   augmentations: # List(rotate, jitter, scale)
   batch_size: 64
 

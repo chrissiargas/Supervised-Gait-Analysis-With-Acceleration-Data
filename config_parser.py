@@ -64,6 +64,7 @@ class Parser:
 
         self.cleaner = args.main_args['cleaner']
         self.include_g = args.main_args['include_gravity']
+        self.g_cutoff = args.main_args['gravity_cutoff']
         self.new_features = args.main_args['new_features']
         self.filter = args.main_args['filter']
         self.filter_window = args.main_args['filter_window']
