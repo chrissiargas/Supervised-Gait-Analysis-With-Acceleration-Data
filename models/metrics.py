@@ -129,6 +129,8 @@ class Metrics(Callback):
             sys.stdout.write("\n")  # Ensure the progress bar finishes cleanly
             print('Validation Metrics: ', self.scores)
 
+
+
     def on_test_end(self, logs={}):
         if self.on == 'test_end':
             self.get_metrics()

@@ -61,8 +61,11 @@ class Parser:
         self.activities = args.data_args['activities']
         self.fs = args.data_args['fs']
         self.path = args.data_args['path']
+        self.dataset = args.data_args['dataset']
 
         self.cleaner = args.main_args['cleaner']
+        self.checks = args.main_args['checks']
+        self.orient_method = args.main_args['orient_method']
         self.include_g = args.main_args['include_gravity']
         self.g_cutoff = args.main_args['gravity_cutoff']
         self.new_features = args.main_args['new_features']
@@ -70,15 +73,18 @@ class Parser:
         self.filter_window = args.main_args['filter_window']
         self.filter_cutoff = args.main_args['filter_cutoff']
         self.rescaler = args.main_args['rescaler']
+
+        self.calc_params = args.main_args['calc_params']
         self.parameters = args.main_args['parameters']
         self.task = args.main_args['task']
-
 
         self.split_type = args.main_args['split_type']
         self.test_hold_out = args.main_args['test_hold_out']
         self.validation = args.main_args['validation']
         self.val_hold_out = args.main_args['val_hold_out']
 
+        self.trim_duration = args.main_args['trim_duration']
+        self.trim_length = int(self.trim_duration * self.fs)
         self.duration = args.main_args['duration']
         self.length = int(self.duration * self.fs)
         self.stride = args.main_args['stride']
@@ -88,13 +94,20 @@ class Parser:
         self.augmentations = args.main_args['augmentations']
 
         self.fft = args.main_args['fft']
+        self.spectrogram = args.main_args['spectrogram']
+        self.stft_duration = args.main_args['stft_duration']
+        self.stft_step = args.main_args['stft_step']
+        self.nperseg = int(self.stft_duration * self.fs)
+        self.nstride = int(self.stft_step * self.fs)
+        self.noverlap = int(self.nperseg - self.nstride)
 
         self.batch_size = args.main_args['batch_size']
 
         self.architecture = args.main_args['architecture']
         self.epochs = args.main_args['epochs']
         self.optimizer = args.main_args['optimizer']
-        self.learning_rate = args.main_args['learning_rate']
+        self.learning_rate = float(args.main_args['learning_rate'])
+        self.head = args.main_args['head']
 
         self.metrics = args.main_args['metrics']
 

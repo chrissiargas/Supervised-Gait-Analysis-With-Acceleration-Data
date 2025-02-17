@@ -3,8 +3,31 @@ from config_parser import Parser
 from preprocessing.augmentations import add_noise, random_scale, time_mask, random_rotate
 import tensorflow as tf
 
+class specter:
+    def __init__(self):
+        config = Parser()
+        config.get_args()
+        self.conf = config
 
-class fft_transformer:
+        self.height = self.conf.nperseg // 2
+        self.width = self.conf.length // self.conf.nstride
+        self.channels = len(self.conf.features)
+
+        self.type = np.float32
+
+    def get_shape(self):
+        return self.height, self.width, 3
+
+    def get_type(self):
+        return self.type
+
+    def __call__(self, spectrogram: np.ndarray, augment: bool = False) -> tf.Tensor:
+        spectrogram = spectrogram.astype(self.type)
+        output = spectrogram.transpose((1, 2, 0))
+        output = tf.convert_to_tensor(output, dtype=tf.float32)
+        return output
+
+class fourier:
     def __init__(self):
         config = Parser()
         config.get_args()
@@ -50,16 +73,14 @@ class fft_transformer:
 
         return output
 
-
+from typing import Dict
 class transformer:
-    def __init__(self):
+    def __init__(self, channels: Dict):
         config = Parser()
         config.get_args()
         self.conf = config
 
-        self.initial_features = {'acc_x': 0, 'acc_y': 1, 'acc_z': 2}
-        self.initial_features.update({k: v+3 for v, k in enumerate(self.conf.new_features)})
-
+        self.channels = channels
         self.available_augmentations =  ['jitter', 'scale', 'mask', 'rotate']
         self.augmentations = self.conf.augmentations
 
@@ -72,17 +93,18 @@ class transformer:
         self.n_features = len(self.conf.features)
         self.type = np.float32
 
+        self.x = self.channels['acc_x']
+        self.y = self.channels['acc_y']
+        self.z = self.channels['acc_z']
+
     def get_shape(self):
         return self.length, self.n_features
 
     def get_type(self):
         return self.type
 
-    def __call__(self, window: np.ndarray, augment: bool = False):
+    def __call__(self, window: np.ndarray, augment: bool = False) -> tf.Tensor:
         window = window.astype(self.type)
-        x = self.initial_features['acc_x']
-        y = self.initial_features['acc_y']
-        z = self.initial_features['acc_z']
         output = None
 
         if augment:
@@ -94,10 +116,10 @@ class transformer:
                 elif aug == 'mask':
                     window = time_mask(window)
                 elif aug == 'rotate':
-                    window[:, [x, y, z]] = random_rotate(window[:, [x, y, z]])
+                    window[:, [self.x, self.y, self.z]] = random_rotate(window[:, [self.x, self.y, self.z]])
 
         for feature in self.conf.features:
-            f_idx = self.initial_features[feature]
+            f_idx = self.channels[feature]
             feature_window = window[:, f_idx]
 
             if output is None:

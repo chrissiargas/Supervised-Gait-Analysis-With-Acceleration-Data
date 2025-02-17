@@ -1,6 +1,9 @@
 import itertools
+import random
+
 import numpy as np
 from scipy.interpolate import CubicSpline
+from transforms3d.axangles import axangle2mat
 
 
 def add_noise(X, sigma=0.1):
@@ -16,12 +19,9 @@ def random_scale(X, sigma=0.1):
 
 
 def random_rotate(X):
-    X = X[np.newaxis, ...]
-    axes = np.random.uniform(low=-1, high=1, size=(X.shape[0], X.shape[2]))
-    angles = np.random.uniform(low=-np.pi, high=np.pi, size=(X.shape[0]))
-    matrices = axis_angle_to_rotation_matrix_3d_vectorized(axes, angles)
-
-    return np.matmul(X, matrices)[0]
+    axis = np.random.uniform(low=-1, high=1, size=X.shape[1])
+    angle = np.random.uniform(low=-np.pi, high=np.pi)
+    return np.matmul(X , axangle2mat(axis,angle))
 
 
 def axis_angle_to_rotation_matrix_3d_vectorized(axes, angles):

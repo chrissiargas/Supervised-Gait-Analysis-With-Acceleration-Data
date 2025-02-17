@@ -1,0 +1,53 @@
+
+# plot windows with max and min variance
+for ds, ds_df in x.groupby('dataset'):
+    for sub, sub_df in ds_df.groupby('subject_id'):
+        for act, act_df in sub_df.groupby('activity_id'):
+            vars = act_df.groupby('period_id').apply(lambda g: get_variance(g[features]))
+            min_id = vars[vars == min(vars.values[:-1])].keys()[0]
+
+            window = act_df[act_df.period_id == min_id]
+            window = window[features]
+
+            fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+            axs.plot(window, linewidth=1, label=features)
+            plt.legend()
+            name = str(ds) + '-' + str(sub) + '-' + str(act) + '-' + 'min'
+            filepath = os.path.join(figpath, name + ".png")
+            plt.savefig(filepath, format="png", bbox_inches="tight")
+            plt.close()
+
+            max_id = vars[vars == max(vars.values[:-1])].keys()[0]
+
+            window = act_df[act_df.period_id == max_id]
+            window = window[features]
+
+            fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+            axs.plot(window, linewidth=1, label=features)
+            plt.legend()
+            name = str(ds) + '-' + str(sub) + '-' + str(act) + '-' + 'max'
+            filepath = os.path.join(figpath, name + ".png")
+            plt.savefig(filepath, format="png", bbox_inches="tight")
+            plt.close()
+
+#
+# if sub == 6:
+#     features = x.columns[x.columns.str.contains('acc')]
+#     act_df['acc_xyz'] = np.linalg.norm(act_df[features].values, axis=1)
+#     # act_df['low_xyz'] = np.linalg.norm(np.apply_along_axis(
+#     # lambda ax: butter_lowpass_filter(ax, cutoff_freq=0.5, nyq_freq=25.0),
+#     # axis=0, arr=act_df[features].values), axis=1)
+#     # print(np.mean(act_df['low_xyz']))
+#
+#     features = act_df.columns[act_df.columns.str.contains('acc')]
+#     name = (str(ds) + '-' + str(sub) + '-' + str(act) + '-')
+#     for f, flag in enumerate(all_flags):
+#         window = act_df[act_df.period_id == flag]
+#         window = window[features]
+#
+#         fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+#         axs.plot(window, linewidth=1, label=features)
+#         plt.legend()
+#         filepath = os.path.join(figpath, name + str(f) + ".png")
+#         plt.savefig(filepath, format="png", bbox_inches="tight")
+#         plt.close()

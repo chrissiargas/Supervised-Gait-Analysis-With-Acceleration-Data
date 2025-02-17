@@ -4,17 +4,6 @@ from typing import Optional, List, Tuple, Dict
 import math
 
 
-def to_categorical(x: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
-    x = x.copy()
-
-    act_factor = pd.factorize(x['activity'])
-
-    x['subject_id'] = x['subject'].astype(int)
-    x['activity_id'], act_dict = act_factor[0], act_factor[1].values
-    act_dict = {k: v for v, k in enumerate(act_dict)}
-
-    return x, act_dict
-
 def segment(X: pd.DataFrame, length: int, step: int, start: int) -> np.ndarray:
     X = X.values[start:]
 
@@ -39,7 +28,7 @@ def form_y(x: pd.DataFrame, length: int, step: int, start: int, task: str) -> np
     else:
         y_cols = x.columns[x.columns.str.contains('LF|RF|HS|TO')]
 
-    groups = x.groupby(['subject', 'activity'])
+    groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
     y_segs = groups.apply(lambda g: segment(g[y_cols], length, step, start))
     y_segs = np.concatenate(y_segs.values)
 
@@ -56,9 +45,9 @@ def form_y(x: pd.DataFrame, length: int, step: int, start: int, task: str) -> np
     return y_targets
 
 def form_t(x: pd.DataFrame, length: int, step: int, start: int) -> np.ndarray:
-    t_cols = ['subject_id', 'activity_id', 'timestamp']
+    t_cols = ['dataset', 'subject_id', 'activity_id', 'timestamp']
 
-    groups = x.groupby(['subject', 'activity'])
+    groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
     t_segs = groups.apply(lambda g: segment(g[t_cols], length, step, start))
     t_segs = np.concatenate(t_segs.values)
 
@@ -69,9 +58,16 @@ def form_t(x: pd.DataFrame, length: int, step: int, start: int) -> np.ndarray:
 def form(x: pd.DataFrame, length: int, step: int, start: int, task: str, get_events: bool = False):
     x = x.copy()
 
-    x_cols = x.columns[x.columns.str.contains('acc|jerk|low|norm|angle')]
-    groups = x.groupby(['subject', 'activity'])
+    groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
+
+    valid_segs = groups.apply(lambda g: segment(g[['irregular']], length, step, start))
+    valid_segs = np.concatenate(valid_segs.values).squeeze()
+    valid_indices = np.argwhere(np.sum(valid_segs, axis=1) == 0).squeeze()
+
+    x_cols = x.columns[x.columns.str.contains('acc|jerk|low|norm|angle|gyr')]
+    channels = {k: v for v, k in enumerate(x_cols)}
     x_segs = groups.apply(lambda g: segment(g[x_cols], length, step, start))
+    sizes = x_segs.apply(lambda g: len(g)).unstack('activity_id').to_dict('index')
     x_segs = np.concatenate(x_segs.values)
 
     y_targets = form_y(x, length, step, start, task)
@@ -81,22 +77,20 @@ def form(x: pd.DataFrame, length: int, step: int, start: int, task: str, get_eve
         y_segs = form_y(x, length, step, 'event_series')
         return x_segs, y_targets, y_segs, t_info
 
-    return x_segs, y_targets, t_info
+    x_segs = x_segs[valid_indices]
+    y_targets = y_targets[valid_indices]
+    t_info = t_info[valid_indices]
+
+    return x_segs, y_targets, t_info, sizes, channels
 
 def finalize(x: pd.DataFrame, length: int, step: int, task: str, get_events: bool = False):
     x = x.copy()
 
-    nan_col = ['is_NaN']
-    moved_cols = [col for col in x.columns if col not in nan_col] + nan_col
-    x = x[moved_cols]
-
-    x, act_dict = to_categorical(x)
-
-    start = 1
+    start = 0
     if get_events:
-        X, Y, events, T = form(x, length, step, start, task, get_events=True)
-        return (X, Y, events, T), act_dict
+        X, Y, events, T, lens, channels = form(x, length, step, start, task, get_events=True)
+        return (X, Y, events, T), lens, channels
 
     else:
-        X, Y, T = form(x, length, step, start, task, get_events=False)
-        return (X, Y, T), act_dict
+        X, Y, T, lens, channels = form(x, length, step, start, task, get_events=False)
+        return (X, Y, T), lens, channels

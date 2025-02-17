@@ -4,7 +4,7 @@ from keras.layers import (Input, LSTM, Conv2D, Conv1D, Dense,
                           Dropout, GlobalMaxPool1D, Activation, ReLU,
                           MaxPooling1D, ZeroPadding1D, Flatten, LayerNormalization, Layer,
                           BatchNormalization, Multiply, Bidirectional, Permute, Lambda, RepeatVector,
-                          GRU)
+                          GRU, ZeroPadding2D, MaxPooling2D)
 from keras.models import Model
 from keras import initializers
 import keras.backend as K
@@ -17,7 +17,7 @@ from preprocessing.utils import impute
 
 def conv1D_Block(inputs, n: int, use_dropout: bool = False,
                  kernel_size: int = 3, filters: int = 64, use_pooling: bool = True,
-                 use_recurrent: bool = False):
+                 use_recurrent: bool = False, initializer = initializers.he_uniform()):
 
     padding = ZeroPadding1D(padding=1, name='ZeroPadding_' + str(n))
     conv1D = Conv1D(
@@ -25,20 +25,17 @@ def conv1D_Block(inputs, n: int, use_dropout: bool = False,
         kernel_size=kernel_size,
         strides=1,
         padding='valid',
-        kernel_initializer=initializers.he_uniform(),
-        name='Conv1D_' + str(n)
+        kernel_initializer=initializers.he_uniform()
     )
-    norm = BatchNormalization(name = 'Norm_' + str(n))
-    relu = ReLU(name='ReLU_' + str(n))
+    norm = BatchNormalization()
+    relu = ReLU()
     lstm = Bidirectional(LSTM(filters//2, activation='tanh', return_sequences=True))
-    dropout = Dropout(rate=0.3, name='Dropout_' + str(n))
-    pooling = MaxPooling1D(2, strides=2, name='MaxPooling_' + str(n))
+    dropout = Dropout(rate=0.3)
+    pooling = MaxPooling1D(2, strides=2)
 
     x = norm(inputs)
-
     if use_recurrent:
         x = lstm(x)
-
     x = padding(x)
     x = conv1D(x)
     x = relu(x)
@@ -93,22 +90,92 @@ def conv1D_Block2(inputs, n: int, use_dropout: bool = False, kernel_size: int = 
 def get_CNN_encoder(input_shape) -> Model:
     inputs = Input(shape=input_shape)
     x = inputs
+    initializer = initializers.he_uniform()
 
     filters = [64, 64, 64, 64]
     kernels = [3, 3, 3, 3]
 
     recurrent = [False, False, False, False]
     pooling = [True, True, True, False]
-    dropout = [True, True, True, True]
+    dropout = [False, False, False, False]
 
     for i in range(len(filters)):
         x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
-                         use_pooling=pooling[i], use_dropout=dropout[i], use_recurrent=recurrent[i])
+                         use_pooling=pooling[i], use_dropout=dropout[i],
+                         use_recurrent=recurrent[i], initializer=initializer)
 
     x = Flatten()(x)
     x = BatchNormalization()(x)
 
-    return Model(inputs, x)
+    return Model(inputs, x, name = 'time_encoder')
+
+def get_spectro_encoder(input_shape, L) -> Model:
+    inputs = Input(shape=input_shape)
+    x = inputs
+    initializer = initializers.he_uniform()
+
+    norm = BatchNormalization()
+    x = norm(x)
+
+    padding = ZeroPadding2D(padding=(1, 1))  # same padding
+    cnn = Conv2D(
+        filters=16,
+        kernel_size=3,
+        strides=1,
+        padding='valid',
+        kernel_initializer=initializer
+    )
+    norm = BatchNormalization()
+    activation = ReLU()
+    pooling = MaxPooling2D((2, 2), strides=2)
+
+    x = padding(x)
+    x = cnn(x)
+    x = norm(x)
+    x = activation(x)
+    x = pooling(x)
+
+    padding = ZeroPadding2D(padding=(1, 1))  # same padding
+    cnn = Conv2D(
+        filters=32,
+        kernel_size=3,
+        strides=1,
+        padding='valid',
+        kernel_initializer=initializer
+    )
+    norm = BatchNormalization()
+    activation = ReLU()
+    pooling = MaxPooling2D((2, 2), strides=2)
+
+    x = padding(x)
+    x = cnn(x)
+    x = norm(x)
+    x = activation(x)
+    x = pooling(x)
+
+    cnn = Conv2D(
+        filters=64,
+        kernel_size=3,
+        strides=1,
+        padding='valid',
+        kernel_initializer=initializer
+    )
+    norm = BatchNormalization()
+    activation = ReLU()
+    pooling = MaxPooling2D((2, 2), strides=2)
+
+    x = cnn(x)
+    x = norm(x)
+    x = activation(x)
+    x = pooling(x)
+
+    flatten = Flatten()
+    dropout = Dropout(rate=0.5)
+
+    x = flatten(x)
+    x = dropout(x)
+
+    return Model(inputs=inputs, outputs=x, name = 'spectro_encoder')
 
 def get_fft_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
     t_inputs = Input(shape=input_shape[0])
@@ -123,6 +190,22 @@ def get_fft_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
     encodings = concatenate((t_encodings, fft_encodings), axis=-1)
 
     return Model((t_inputs, fft_inputs), encodings, name=name)
+
+def get_spectro_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
+    t_inputs = Input(shape=input_shape[0])
+    spectro_inputs = Input(shape=input_shape[1])
+
+    L = 64
+    t_encoder = get_CNN_encoder(input_shape[0], L)
+    spectro_encoder = get_spectro_encoder(input_shape[1], L)
+
+    t_encodings = t_encoder(t_inputs)
+    spectro_encodings = spectro_encoder(spectro_inputs)
+
+    encodings = concatenate((t_encodings, spectro_encodings), axis=-1)
+
+    model = Model((t_inputs, spectro_inputs), encodings, name=name)
+    return model, t_encoder, spectro_encoder
 
 def get_CNNGRU_encoder(input_shape) -> Model:
     inputs = Input(shape=input_shape)
@@ -388,18 +471,28 @@ def attention_3d_block(inputs):
 def get_attention_encoder(input_shape, name: str = 'attention_encoder'):
     inputs = Input(shape=input_shape)
     x = inputs
-    n = 32
 
-
-    x = Conv1D(filters=n, kernel_size=1, strides=1, padding='same')(x)
+    x = Conv1D(filters=32, kernel_size=3, strides=1, padding='same')(x)
+    x = BatchNormalization()(x)
     x = Activation('relu')(x)
 
-    x = Bidirectional(LSTM(n, return_sequences=True))(x)
-    x = Bidirectional(LSTM(n, return_sequences=True))(x)
+    x = Conv1D(filters=64, kernel_size=3, strides=1, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
 
-    x = attention_3d_block(x)
+    x = Conv1D(filters=128, kernel_size=3, strides=1, padding='same')(x)
+    x = BatchNormalization()(x)
+    x = Activation('relu')(x)
+
+    x = positional_encoding(n_timesteps=input_shape[0], n_features=128)(x)
+    x = Dropout(rate=0.1)(x)
+
+    for _ in range(6):
+        x = transformer_layer(d_model=128, num_heads=8, dff=256, rate=0.1)(x)
 
     x = Flatten()(x)
+    x = BatchNormalization()(x)
+    x = Dropout(rate=0.2)(x)
 
     return Model(inputs, x, name = name)
 

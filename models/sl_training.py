@@ -7,10 +7,10 @@ from tensorflow.python.keras.models import save_model
 from tensorflow.python.ops.distributions.categorical import Categorical
 
 from models.architectures import (get_attention_encoder, get_tcn_encoder, get_CNN_encoder,
-                                  get_CNN_encoder2, get_fft_CNN_encoder, get_CNNGRU_encoder)
+                                  get_CNN_encoder2, get_fft_CNN_encoder, get_CNNGRU_encoder, get_spectro_CNN_encoder)
 
 from models.architectures import get_tcn_encoder
-from models.head import attach_head
+from models.head import attach_single_head, attach_double_head
 from preprocessing.building import builder
 from config_parser import Parser
 from models.metrics import binary_accuracies, Metrics
@@ -37,7 +37,7 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     else:
         optimizer = Optimizer()
 
-    loss = BinaryCrossentropy()
+    loss = keras.losses.BinaryCrossentropy()
     metrics = binary_accuracies(data)
 
     if config.architecture == 'cnn':
@@ -45,6 +45,9 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
 
     if config.architecture == 'fft_cnn':
         model = get_fft_CNN_encoder((data.input_shape, data.fft_input_shape))
+
+    if config.architecture == 'spectro_cnn':
+        model, t_encoder, f_encoder = get_spectro_CNN_encoder((data.input_shape, data.fft_input_shape))
 
     if config.architecture == 'cnngru':
         model = get_CNNGRU_encoder(data.input_shape)
@@ -55,12 +58,20 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     if config.architecture == 'tcn':
         model = get_tcn_encoder(data.input_shape)
 
-    model = attach_head(model, data.output_shape, [64])
+    units = 64
+    if config.head == 'double':
+        model = attach_double_head(model, data.output_shape, [units//2])
+
+    if config.head == 'single':
+        model = attach_single_head(model, data.output_shape, [units])
+
+    model.compile(optimizer, loss = loss, metrics = metrics)
 
     if summary:
         print(model.summary())
-
-    model.compile(optimizer, loss = loss, metrics = metrics)
+        if config.architecture == 'spectro_cnn':
+            print(t_encoder.summary())
+            print(f_encoder.summary())
 
     train_steps = data.train_size // config.batch_size
     test_steps = data.test_size // config.batch_size
@@ -99,19 +110,17 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     early_stopping = EarlyStopping(
         monitor = 'val_loss',
         min_delta = 0,
-        patience = 10,
-        mode = 'auto',
+        patience = 30,
+        mode = 'min',
         verbose = 1
     )
 
     scores = ['accuracy', 'binary_crossentropy', 'f1_score']
-    val_metrics = Metrics(val, val_steps, log_dir, on='epoch_end',
-                                 scores=scores, verbose=0)
+    val_metrics = Metrics(val, val_steps, log_dir, on='epoch_end', scores=scores, verbose=0)
     callbacks = [
         tensorboard,
         save_model,
-        early_stopping,
-        val_metrics
+        early_stopping
     ]
 
     model.fit(

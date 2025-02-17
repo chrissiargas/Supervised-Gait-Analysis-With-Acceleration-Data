@@ -1,11 +1,7 @@
 from datetime import datetime
-
-from pandas.core.config_init import val_mca
-
 from config_parser import Parser
 import os
 import pandas as pd
-import matplotlib.pyplot as plt
 import numpy as np
 from typing import Optional, Tuple, Dict
 import pickle
@@ -13,140 +9,55 @@ import tensorflow as tf
 
 from preprocessing.info import info
 from preprocessing.resampling import resample
-from preprocessing.utils import impute, remove_g, produce, smooth, rescale, get_parameters
+from preprocessing.utils import (impute, remove_g, produce, smooth, rescale,
+                                 get_parameters, to_categorical, trim,separate, orient, is_irregular)
 from preprocessing.splitting import split
 from preprocessing.segments import finalize
-from preprocessing.transformations import transformer, fft_transformer
+from preprocessing.transformations import transformer, specter, fourier
+import preprocessing.fft as fft
+import random
+from tqdm import tqdm
+from plots import *
 
 seed = 45
-figpath = os.path.join('archive', 'figures')
-pd.set_option('display.max_rows', 1000)
-second_plot = True
+position = 'left_lower_arm'
+dataset = None
+subject = 1
+activity = 2
+start = 400
+length = 400
 
-def set_shuffle(set):
+def plot_all(data):
+    for sub in sorted(pd.unique(data['subject_id'])):
+        if sub > 100:
+            act = 100 + activity
+        else:
+            act = activity
+
+        plot_signal(data, position, dataset, sub, act, start, length,
+                    show_events=second_plot, features='acc')
+
+def plot_one(data):
+    plot_signal(data, position, dataset, subject, activity, start, length,
+                show_events=second_plot, features='acc')
+
+def set_shuffle(set, idx):
     a, b, c = set
     assert len(a) == len(b) == len(c)
-    idx = np.random.permutation(len(a))
-    return a[idx], b[idx], c[idx]
+
+    shuffled_idx = []
+    for group in idx.keys():
+        group_idx = idx[group].tolist()
+        group_indices = random.sample(group_idx, len(group_idx))
+        shuffled_idx.extend(group_indices)
 
 
-def plot_signal(x: pd.DataFrame, pos: str, subject: int = 5,
-                start: Optional[int] = None, length: Optional[int] = None,
-                show_events: bool = False):
-    x = x[x['subject'] == subject]
-
-    positions = pd.unique(x['position'])
-    features = x.columns[x.columns.str.contains("acc|norm|jerk|low|angle")]
-    all_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
-
-    if pos in positions:
-        x = x[x['position'] == pos]
-
-        t = x['timestamp'].values
-        sig = x[features].values
-        evs = x[all_events].values
-
-        if start is not None and length is not None:
-            t = t[start: start + length]
-            sig = sig[start: start + length]
-            evs = evs[start: start + length]
-
-        sig = np.array(sig, dtype=np.float32)
-
-        fig, axs = plt.subplots(1, sharex=True, figsize=(20, 15))
-        axs.plot(sig, linewidth=1, label=features)
-
-        if show_events:
-            colors = ['b', 'k', 'r', 'g']
-            for color, ev, name in zip(colors, evs.transpose(), all_events):
-                ev_ixs = np.where(ev == 1)
-                axs.vlines(ev_ixs, 0, 1, transform=axs.get_xaxis_transform(), colors=color,
-                           linewidth=1, linestyles='dashed', label=name)
-
-        plt.legend()
-        filepath = os.path.join(figpath, datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
-        plt.savefig(filepath, format="png", bbox_inches="tight")
-
-def plot_parameters(x: pd.DataFrame, pos: str, subject: int = 5, activity: str = 'treadmill_walking',
-                    start: Optional[int] = None, length: Optional[int] = None,
-                    show_events: bool = False):
-
-    x = x[x['subject'] == subject]
-    x = x[x['activity'] == activity]
-
-    positions = pd.unique(x['position'])
-    parameters = x.columns[x.columns.str.contains("left|right|step")]
-    all_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
-
-    if pos in positions:
-        x = x[x['position'] == pos]
-
-        t = x['timestamp'].values
-        params = x[parameters].to_numpy()
-        evs = x[all_events].values
-
-        if start is not None and length is not None:
-            t = t[start: start + length]
-            params = params[start: start + length]
-            evs = evs[start: start + length]
-
-        fig, axs = plt.subplots(1, sharex=True, figsize=(20, 15))
-        axs.plot(params, linewidth=1, label = parameters)
-
-        if show_events:
-            colors = ['b', 'k', 'r', 'g']
-            for color, ev, name in zip(colors, evs.transpose(), all_events):
-                ev_ixs = np.where(ev == 1)
-                axs.vlines(ev_ixs, 0, 1, transform=axs.get_xaxis_transform(), colors=color,
-                           linewidth=1, linestyles='dashed', label=name)
-
-        plt.legend()
-        filepath = os.path.join(figpath, datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
-        plt.savefig(filepath, format="png", bbox_inches="tight")
-
-def plot_window(S: Tuple[np.ndarray, np.ndarray, np.ndarray], act_dict: Dict,
-                subject: int = 5, activity: int = 0,
-                search: Optional[float] = None, plot_y: bool = False):
-    if plot_y:
-        X, _, Y, T = S
-    else:
-        X, Y, T = S
-
-    idx = np.argwhere(T[:, 0] == subject).squeeze()
-    X = X[idx]
-    Y = Y[idx]
-    T = T[idx]
-
-    idx = np.argwhere(T[:, 1] == activity).squeeze()
-    X = X[idx]
-    Y = Y[idx]
-    T = T[idx]
-
-    idx = np.argwhere((T[:, 2] < search) & (search < T[:, 3])).squeeze()
-
-    if len(idx.shape) > 0:
-        idx = idx[-1]
-
-    window = X[idx]
-    y = Y[idx]
-
-    fig, axs = plt.subplots(1, sharex=True, figsize=(20, 15))
-    axs.plot(window, linewidth=0.5)
-
-    if plot_y:
-        colors = ['b', 'k', 'r', 'g']
-        for color, ev, name in zip(colors, y.transpose(), ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']):
-            ev_ixs = np.where(ev == 1)
-            axs.vlines(ev_ixs, 0, 1, transform=axs.get_xaxis_transform(), colors=color,
-                       linewidth=1, linestyles='dashed', label=name, alpha=0.5)
-
-    plt.legend()
-    filepath = os.path.join(figpath, datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
-    plt.savefig(filepath, format="png", bbox_inches="tight")
-
+    return a[shuffled_idx], b[shuffled_idx], c[shuffled_idx]
 
 class builder:
     def __init__(self, generate: bool = False):
+        self.channels = None
+        self.info = None
         self.output_type = None
         self.output_shape = None
         self.input_type = None
@@ -158,7 +69,6 @@ class builder:
         config = Parser()
         config.get_args()
         self.conf = config
-        self.info = info()
 
         self.path = os.path.join(
             os.path.expanduser('~'),
@@ -172,24 +82,27 @@ class builder:
         )
 
         if generate:
-            self.extract()
-            self.data = pd.read_csv(self.extract_path)
+            if self.conf.dataset == 'marea':
+                self.marea_extract()
+            elif self.conf.dataset == 'nonan':
+                self.nonan_extract()
+            elif self.conf.dataset == 'synthetic':
+                self.synthetic_extract()
 
-        else:
-            self.data = pd.read_csv(self.extract_path)
+        self.info = info(self.conf.dataset)
+        self.data = pd.read_csv(self.extract_path)
 
     def __call__(self, verbose: bool = False):
         if self.conf.load_data:
             train, test, val = self.load()
 
         else:
-            train, test, val = self.preprocess(verbose)
+            train, test, val, train_sgs, test_sgs, val_sgs = self.preprocess(verbose)
             self.save(train, test, val)
 
         if self.randomize:
-            set_shuffle(train)
-            set_shuffle(test)
-            set_shuffle(val)
+            train_idx = separate(train)
+            train = set_shuffle(train, train_idx)
 
         self.get_transformers()
         self.output_shape = train[1].shape[-1]
@@ -200,28 +113,33 @@ class builder:
         self.test_size = test[0].shape[0]
         self.val_size = val[0].shape[0]
 
-        train = self.generate(train, training=True)
-        test = self.generate(test, training=False)
-        val = self.generate(val, training=False)
+        train = self.generate(train, train_sgs, training=True)
+        test = self.generate(test, test_sgs, training=False)
+        val = self.generate(val, val_sgs, training=False)
 
         return self.batch_prefetch(train, test, val)
 
-    def generate(self, S: Tuple[np.ndarray, np.ndarray, np.ndarray], training: bool = True):
+    def generate(self, S: Tuple[np.ndarray, np.ndarray, np.ndarray],
+                 sgs: Optional[np.ndarray] = None, training: bool = True):
         X, Y, _ = S
         output_shape = () if self.output_shape == 1 else self.output_shape
         def gen():
-            for x, y in zip(X, Y):
-                x_ = self.transformer(x, training)
-                y_ = tf.convert_to_tensor(y, dtype=tf.float32)
-                y_ = tf.squeeze(y_)
+            for i, (x_, y_) in enumerate(zip(X, Y)):
+                x = self.transformer(x_, training)
+                y = tf.convert_to_tensor(y_, dtype=tf.float32)
+                y = tf.squeeze(y)
 
                 if self.conf.fft:
-                    x_fft = self.fft_transformer(x, training)
-                    yield (x_, x_fft), y_
-                else:
-                    yield x_, y_
+                    f = self.fft_transformer(x, training)
+                    yield (x, f), y
+                if self.conf.spectrogram:
+                    f_ = sgs[i]
+                    f = self.fft_transformer(f_, training)
+                    yield (x, f), y
 
-        if self.conf.fft:
+                yield x, y
+
+        if self.conf.fft or self.conf.spectrogram:
             return tf.data.Dataset.from_generator(
                 gen,
                 output_types=((tf.float32, tf.float32), tf.float32),
@@ -235,7 +153,7 @@ class builder:
             )
 
     def batch_prefetch(self, train, test, val):
-        train = train.shuffle(1000).repeat().batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
+        train = train.shuffle(10000).repeat().batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
         test = test.batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
         val = val.batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
 
@@ -279,93 +197,170 @@ class builder:
         output.close()
 
     def get_transformers(self):
-        self.transformer = transformer()
-        self.fft_transformer = fft_transformer()
+        self.transformer = transformer(self.channels)
         self.input_shape = self.transformer.get_shape()
-        self.fft_input_shape = self.fft_transformer.get_shape()
+
+        if self.conf.fft:
+            self.fft_transformer = fourier()
+            self.fft_input_shape = self.fft_transformer.get_shape()
+        elif self.conf.spectrogram:
+            self.fft_transformer = specter()
+            self.fft_input_shape = self.fft_transformer.get_shape()
 
     def preprocess(self, verbose: bool = False):
+        verbose = True
         data = self.data.copy()
         data = data.drop(data.columns[0], axis=1)
+        data = data.rename(columns={'time': 'timestamp', 'subject': 'subject_id', 'activity': 'activity_id'})
 
+        drop_indices = data[(data['dataset'] == 'nonan')].index
+        data = data.drop(drop_indices)
+
+        data = trim(data, length = self.conf.trim_length)
         if verbose:
-            position = self.info.pos_pairs[self.conf.position]
-            subject = 15
-            start = 5000
+            plot_all(data)
 
+        data = is_irregular(data, period=self.conf.length, checks=self.conf.checks)
+        # if verbose:
+        #     plot_all(data)
+
+        data = orient(data, 'gravity', dim='2d')
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_all(data)
 
-        data = impute(data, self.conf.cleaner)
-
+        data = orient(data, 'pca', dim='2d')
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_all(data)
 
-        data = remove_g(data, self.conf.fs, self.conf.include_g, self.conf.g_cutoff)
+        return
 
+        data = remove_g(data, self.conf.fs, self.conf.include_g, self.conf.g_cutoff, how='lowpass')
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_one(data)
 
         data = smooth(data, self.conf.filter, self.conf.filter_window, self.conf.fs, self.conf.filter_cutoff)
-
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_one(data)
 
         data = produce(data, self.conf.new_features, self.conf.fs)
-
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_one(data)
 
         data = rescale(data, self.conf.rescaler)
-
         if verbose:
-            plot_signal(data, position, subject, start, 400, show_events=second_plot)
+            plot_one(data)
 
-        data = get_parameters(data, self.conf.parameters)
-
+        data = get_parameters(data, self.conf.parameters, self.conf.calc_params)
         if verbose:
-            plot_parameters(data, position, subject, 'treadmill_walking', start, 400,
-                            show_events=True)
+            plot_one(data)
 
-        train, test = split(data, self.conf.split_type, self.conf.test_hold_out, seed)
-
+        spectrograms = None
+        train, test, train_sgs, test_sgs = split(data, self.conf.split_type, self.conf.test_hold_out, seed, spectrograms)
         if self.conf.validation:
-            train, val = split(train, self.conf.split_type, self.conf.val_hold_out, seed)
+            train, val, train_sgs, val_sgs = split(train, self.conf.split_type, self.conf.val_hold_out, seed, train_sgs)
         else:
-            val = None
+            val, val_sgs = None, None
 
         if verbose:
-            plot_signal(train, position, subject, start, 400, show_events=second_plot)
+            plot_one(train)
 
-        train, test, val = self.to_windows(train, test, val)
+        train, test, val, train_sgs, test_sgs, val_sgs = self.to_windows(train, test, val, train_sgs, test_sgs, val_sgs)
 
-        if verbose:
-            plot_window(train, self.train_dict, subject, self.train_dict['treadmill_walking'], search=100, plot_y=False)
+        return train, test, val, train_sgs, test_sgs, val_sgs
 
-        return train, test, val
-
-    def to_windows(self, train, test, val):
-        test_step = 'min'
+    def to_windows(self, train, test, val, train_sgs = None, test_sgs = None, val_sgs = None):
+        test_step = 'same'
         val_step = 'same'
+        lowest_step = 1 if train_sgs is None else self.conf.nstride
 
-        train, self.train_dict = finalize(train, self.conf.length, self.conf.step, self.conf.task, get_events=False)
+        train, sizes, self.channels = finalize(train, self.conf.length, self.conf.step, self.conf.task, get_events=False)
+        if train_sgs is not None:
+            train_sgs = fft.segment(train_sgs, sizes, self.conf.length, self.conf.step, self.conf.nstride)
 
         which_set = val if self.conf.validation else test
-        which_step = self.conf.step if val_step == 'same' else self.conf.step // 5 if val_step == 'low' else 1
-        val, _ = finalize(which_set, self.conf.length, which_step, self.conf.task, get_events=False)
+        which_sgs = val_sgs if self.conf.validation else test_sgs
+        which_step = self.conf.step if val_step == 'same' else self.conf.step // 10 if val_step == 'low' else lowest_step
 
-        which_step = self.conf.step if test_step == 'same' else self.conf.step // 5 if test_step == 'low' else 1
-        test, _ = finalize(test, self.conf.length, which_step, self.conf.task, get_events=False)
+        val, sizes, _ = finalize(which_set, self.conf.length, which_step, self.conf.task, get_events=False)
+        if which_sgs is not None:
+            val_sgs = fft.segment(which_sgs, sizes, self.conf.length, which_step, self.conf.nstride)
+
+        which_step = self.conf.step if test_step == 'same' else self.conf.step // 10 if test_step == 'low' else lowest_step
+        test, sizes, _ = finalize(test, self.conf.length, which_step, self.conf.task, get_events=False)
+        if test_sgs is not None:
+            test_sgs = fft.segment(test_sgs, sizes, self.conf.length, which_step, self.conf.nstride)
 
         print(train[0].shape, val[0].shape, test[0].shape)
 
-        return train, test, val
+        return train, test, val, train_sgs, test_sgs, val_sgs
 
-    def extract(self):
-        subject_dir = os.listdir(self.info.path)
+    def nonan_extract(self, save: bool = False):
+        self.info = info('nonan')
+        subject_dir = sorted(os.listdir(self.info.path))
+        df = pd.DataFrame()
+
+        for sub_file in tqdm(subject_dir):
+            if 'nonan' in sub_file:
+                continue
+
+            sub_path = os.path.join(self.info.path, sub_file)
+            sub_df = self.nonan_load_subject(sub_path)
+            sub_df = sub_df.sort_values(by=['activity', 'time'])
+
+            to_file = os.path.join(self.path, sub_file)
+            sub_df.to_csv(to_file)
+
+            df = df._append(sub_df)
+            del sub_df
+
+        df['dataset'] = 'nonan'
+
+        if save:
+            df.to_csv(self.extract_path)
+
+        return df
+
+    def nonan_load_subject(self, path):
+        df = pd.read_csv(path)
+
+        position = self.conf.position
+        if position == 'Wrist':
+            position = 'LH'
+
+        pos_imu = df.columns[df.columns.str.contains(position)]
+        columns = df.columns.intersection([*self.info.indicators, *pos_imu, *self.info.phases, *self.info.events])
+        df = df[columns]
+
+        df = df.reset_index()
+        df['position'] = self.conf.position
+        df.columns = df.columns.str.replace('_' + self.conf.position, '')
+
+        df = df.rename(columns={"accX": "acc_x", "accY": "acc_y", "accZ": "acc_z"})
+        df = df.rename(columns={"gyrX": "gyr_x", "gyrY": "gyr_y", "gyrZ": "gyr_z"})
+        df['position'] = df['position'].map(self.info.pos_pairs)
+
+        for sensor in ['acc', 'gyr']:
+            features = df.columns[df.columns.str.contains(sensor)]
+            df.loc[(df[features] == 0).all(axis='columns'), features] = np.nan
+
+        if self.conf.fs is not None:
+            df = resample(df, self.info.initial_fs, self.conf.fs, how='decimate')
+
+        df = df.astype({'position': str, 'subject': int,
+                        'activity': int, 'time': float, 'is_NaN': bool,
+                        'LF_HS': int, 'RF_HS': int, 'LF_TO': int, 'RF_TO': int,
+                        'LF_stance': int, 'RF_stance': int,
+                        'acc_x': float, 'acc_y': float, 'acc_z': float,
+                        'gyr_x': float, 'gyr_y': float, 'gyr_z': float})
+
+        return df
+
+    def marea_extract(self, save: bool = True):
+        self.info = info('marea')
+        subject_dir = sorted(os.listdir(self.info.path))
         ds = pd.DataFrame()
 
-        for sub_file in subject_dir:
+        for sub_file in tqdm(subject_dir):
             if 'marea_full' in sub_file:
                 continue
 
@@ -378,25 +373,31 @@ class builder:
             ds = ds._append(sub_df)
 
         ds = ds.rename(columns={"accX": "acc_x", "accY": "acc_y", "accZ": "acc_z"})
-        ds = ds.astype({'timestamp': float, 'subject': int,
-                        'activity': str, 'position': str,
-                        'acc_x': float, 'acc_y': float, 'acc_z': float,
-                        'LF_HS': int, 'RF_HS': int, 'LF_TO': int, 'RF_TO': int})
 
         activities = self.conf.activities
         fs = self.conf.fs
 
-        ds['activity'] = ds['activity'].map(self.info.act_pairs)
-        ds['position'] = ds['position'].map(self.info.pos_pairs)
-
         if activities is not None:
             ds = ds[ds['activity'].str.contains('|'.join(activities))]
 
-        if fs is not None:
-            ds = resample(ds, self.info.initial_fs, fs)
+        ds['activity'] = ds['activity'].map(self.info.act_pairs)
+        ds['position'] = ds['position'].map(self.info.pos_pairs)
 
-        ds = ds.sort_values(by=['subject', 'timestamp'])
-        ds.to_csv(self.extract_path)
+        if fs is not None:
+            ds = resample(ds, self.info.initial_fs, fs, how='resampy')
+
+        ds = ds.astype({'position': 'str', 'subject': int,
+                        'activity': int, 'time': float, 'is_NaN': bool,
+                        'LF_HS': int, 'RF_HS': int, 'LF_TO': int, 'RF_TO': int,
+                        'acc_x': float, 'acc_y': float, 'acc_z': float})
+
+        ds = ds.sort_values(by=['subject', 'activity', 'time'])
+        ds['dataset'] = 'marea'
+
+        if save:
+            ds.to_csv(self.extract_path)
+
+        return ds
 
     def marea_load_subject(self, path):
         df = pd.read_csv(path)
@@ -407,6 +408,8 @@ class builder:
         ]
         events = self.info.events
         position = self.conf.position
+        if position == 'LH':
+            position = 'Wrist'
 
         acc_x = 'accX_' + position
         acc_y = 'accY_' + position
@@ -417,7 +420,7 @@ class builder:
         pos_df = self.convert_activity(pos_df)
 
         pos_df = pos_df.reset_index()
-        pos_df['timestamp'] = df.index * (1000. / 128.)
+        pos_df['time'] = df.index * (1000. / 128.)
         pos_df = pos_df.drop(['index'], axis=1)
         pos_df.columns = pos_df.columns.str.replace('_' + position, '')
         pos_df['position'] = position
@@ -446,6 +449,22 @@ class builder:
         x = x.drop(x.columns.intersection(self.info.activities), axis=1)
 
         return x
+
+    def synthetic_extract(self):
+        nonan = self.nonan_extract(save=False)
+        marea = self.marea_extract(save=False)
+
+        nonan = nonan.rename(columns={'acc_x': 'acc_y', 'acc_y': 'acc_x'})
+        nonan['acc_z'] *= -1.
+
+        nonan['subject'] = nonan['subject'] + 100
+        nonan['activity'] = nonan['activity'] + 100
+        synthetic = pd.concat([marea, nonan], axis=0, ignore_index=True)
+        ordered_cols = ['dataset', 'position', 'subject', 'activity', 'time', 'is_NaN',
+                        'LF_HS', 'RF_HS', 'LF_TO', 'RF_TO', 'LF_stance', 'RF_stance',
+                        'acc_x', 'acc_y', 'acc_z', 'gyr_x', 'gyr_y', 'gyr_z']
+        synthetic = synthetic[ordered_cols]
+        synthetic.to_csv(self.extract_path)
 
 
 

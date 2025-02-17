@@ -74,7 +74,6 @@ def save(path, history, hparams=None):
     plt.close(fig)
 
 def sl_experiment():
-
     data = builder(generate)
     train_evaluate(data, summary=True, verbose=True)
     del data

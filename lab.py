@@ -1,23 +1,14 @@
+import pandas as pd
 import tensorflow as tf
 import numpy as np
 import matplotlib.pyplot as plt
 from preprocessing.building import builder
 
-b = builder()
-data, _, _ = b()
+from scipy import signal
+import matplotlib.pyplot as plt
+import numpy as np
 
-for batch in data.take(1):
-    X, Y = batch
-
-    print(X.shape)
-    x = X[0, :, 0]
-
-    plt.plot(x)
-    plt.show()
-
-    sp = np.fft.fft(x)
-    power_fft = np.abs(sp)
-    print(power_fft.shape)
-
-    plt.plot(power_fft)
-    plt.show()
+x = pd.DataFrame({'A': [1,2], 'B': [3,4]})
+print(x)
+x = x.rename(columns={'A':'B', 'B':'A'})
+print(x)
