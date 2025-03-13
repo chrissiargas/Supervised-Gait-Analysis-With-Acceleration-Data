@@ -1,5 +1,5 @@
 from tensorboard import program
-model = 'cnn'
+model = 'cnn-gru'
 
 tracking_address = './logs' + '/' + model + '_TB'  # the path of your log file. (accEncoderTb, fullModelTb)
 if __name__ == "__main__":

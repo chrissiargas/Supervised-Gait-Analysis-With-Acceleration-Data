@@ -3,9 +3,23 @@ import shutil
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
+from typing import Dict
+
+def get_imu_features(from_sensor: str, to_sensor: str, side: str) -> Dict:
+
+
+    imu = {f'{from_sensor} Accel Sensor X {side} (mG)': f'accX_{to_sensor}',
+           f'{from_sensor} Accel Sensor Y {side} (mG)': f'accY_{to_sensor}',
+           f'{from_sensor} Accel Sensor Z {side} (mG)': f'accZ_{to_sensor}',
+           f'{from_sensor} course {side} (deg)': f'course_{to_sensor}',
+           f'{from_sensor} pitch {side} (deg)': f'pitch_{to_sensor}',
+           f'{from_sensor} roll {side} (deg)': f'roll_{to_sensor}'}
+
+    return imu
+
 
 class nonan:
-    def __init__(self):
+    def __init__(self, delete: bool = False):
         self.source_path = os.path.join(
             os.path.expanduser('~'),
             'datasets',
@@ -15,125 +29,105 @@ class nonan:
         self.target_path = os.path.join(os.path.expanduser('~'),
                                       'datasets','NONAN_new')
 
-        z = os.path.join(self.source_path, 'extracted')
+        if delete:
+            try:
+                for f in os.listdir(self.target_path):
+                    shutil.rmtree(os.path.join(self.target_path, f))
+                    os.mkdir(os.path.join(self.target_path, f))
+            except OSError as e:
+                print("Error: %s - %s." % (e.filename, e.strerror))
 
-        try:
-            shutil.rmtree(z)
-        except OSError as e:
-            print("Error: %s - %s." % (e.filename, e.strerror))
 
         self.phases = {'Contact LT': 'LF_stance', 'Contact RT': 'RF_stance'}
         self.timestamps = {'time': 'time'}
 
-        self.imu_LH = {'Forearm Accel Sensor X LT (mG)': 'accX_LH',
-                       'Forearm Accel Sensor Y LT (mG)': 'accY_LH',
-                       'Forearm Accel Sensor Z LT (mG)': 'accZ_LH',
-                       'Noraxon MyoMotion-Segments-Forearm LT-Gyroscope-x (deg/s)': 'gyrX_LH',
-                       'Noraxon MyoMotion-Segments-Forearm LT-Gyroscope-y (deg/s)': 'gyrY_LH',
-                       'Noraxon MyoMotion-Segments-Forearm LT-Gyroscope-z (deg/s)': 'gyrZ_LH'}
-
-        self.imu_RH = {'Forearm Accel Sensor X RT (mG)': 'accX_RH',
-                       'Forearm Accel Sensor Y RT (mG)': 'accY_RH',
-                       'Forearm Accel Sensor Z RT (mG)': 'accZ_RH',
-                       'Noraxon MyoMotion-Segments-Forearm RT-Gyroscope-x (deg/s)': 'gyrX_RH',
-                       'Noraxon MyoMotion-Segments-Forearm RT-Gyroscope-y (deg/s)': 'gyrY_RH',
-                       'Noraxon MyoMotion-Segments-Forearm RT-Gyroscope-z (deg/s)': 'gyrZ_RH'}
-
-        self.imu_LF = {'Foot Accel Sensor X LT (mG)': 'accX_LF',
-                       'Foot Accel Sensor Y LT (mG)': 'accY_LF',
-                       'Foot Accel Sensor Z LT (mG)': 'accZ_LF',
-                       'Noraxon MyoMotion-Segments-Foot LT-Gyroscope-x (deg/s)': 'gyrX_LF',
-                       'Noraxon MyoMotion-Segments-Foot LT-Gyroscope-y (deg/s)': 'gyrY_LF',
-                       'Noraxon MyoMotion-Segments-Foot LT-Gyroscope-z (deg/s)': 'gyrZ_LF'}
-
-        self.imu_RF = {'Foot Accel Sensor X RT (mG)': 'accX_RF',
-                       'Foot Accel Sensor Y RT (mG)': 'accY_RF',
-                       'Foot Accel Sensor Z RT (mG)': 'accZ_RF',
-                       'Noraxon MyoMotion-Segments-Foot RT-Gyroscope-x (deg/s)': 'gyrX_RF',
-                       'Noraxon MyoMotion-Segments-Foot RT-Gyroscope-y (deg/s)': 'gyrY_RF',
-                       'Noraxon MyoMotion-Segments-Foot RT-Gyroscope-z (deg/s)': 'gyrZ_RF'}
+        self.imu_LH = get_imu_features('Forearm', 'LH', 'LT')
+        self.imu_RH = get_imu_features('Forearm', 'RH', 'RT')
+        self.imu_LF = get_imu_features('Foot', 'LF', 'LT')
+        self.imu_RF = get_imu_features('Foot', 'RF', 'RT')
 
         self.foot_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
+
+        self.types = {
+            'time': 'float64',
+            'subject': 'int16',
+            'activity': 'int8',
+            'LF_HS': 'boolean',
+            'RF_HS': 'boolean',
+            'LF_TO': 'boolean',
+            'RF_TO': 'boolean',
+            'LF_stance': 'boolean',
+            'RF_stance': 'boolean'
+        }
 
         self.acc_factor = 9.80665 / 1000.
 
     def __call__(self, *args, **kwargs):
-        subject_dir = sorted(os.listdir(self.source_path))
-        params_path = os.path.join(self.source_path, 'Spatiotemporal_Variables')
+        population_dir = sorted(os.listdir(self.source_path))
 
-        data = None
-        for sub_file in tqdm(subject_dir):
-            if "S0" not in sub_file:
-                continue
+        for pop_folder in tqdm(population_dir):
+            pop_path = os.path.join(self.source_path, pop_folder)
+            subject_dir = sorted(os.listdir(pop_path))
 
-            to_file = os.path.join(self.target_path, sub_file + '.csv')
-            if os.path.exists(to_file):
-                sub_data = pd.read_csv(to_file)
-                print(sub_data.isna().sum())
-                data = pd.concat([data, sub_data], axis=0, ignore_index=True)
-                continue
+            for sub_file in tqdm(subject_dir):
+                sub_df = None
 
-            sub_id = int(sub_file[-3:])
-            sub_path = os.path.join(self.source_path, sub_file)
-            session_dir = sorted(os.listdir(sub_path))
-
-            sub_data = None
-            for session, session_name in tqdm(enumerate(session_dir)):
-                parameters_file = os.path.join(params_path, session_name)
-                parameters = pd.read_csv(parameters_file)
-                if len(parameters) == 1:
-                    print('wrong contact data: ' + session_name)
+                if 'S' != sub_file[0] or 'Spatiotemporal' in sub_file:
                     continue
 
-                session_file = os.path.join(sub_path, session_name)
-                df = pd.read_csv(session_file)
+                to_file = os.path.join(self.target_path, pop_folder, sub_file + '.csv')
 
-                LH = df[self.imu_LH.keys()]
-                RH = df[self.imu_RH.keys()]
-                LF = df[self.imu_LF.keys()]
-                RF = df[self.imu_RF.keys()]
-                phases = df[self.phases.keys()].astype(bool).astype(int)
-                timestamps = df[self.timestamps.keys()]
+                if os.path.exists(to_file):
+                    continue
 
-                LH = LH.rename(index=str, columns=self.imu_LH)
-                RH = RH.rename(index=str, columns=self.imu_RH)
-                LF = LF.rename(index=str, columns=self.imu_LF)
-                RF = RF.rename(index=str, columns=self.imu_RF)
-                phases = phases.rename(index=str, columns=self.phases)
-                timestamps = timestamps.rename(index=str, columns=self.timestamps)
-                events = self.get_events(phases)
+                sub_id = int(sub_file[-3:])
+                sub_path = os.path.join(pop_path, sub_file)
+                session_dir = sorted(os.listdir(sub_path))
 
-                session_data = pd.concat([timestamps, LH, RH, LF, RF, phases, events], axis=1, sort=False)
-                acc_features = session_data.columns[session_data.columns.str.contains("acc")]
-                session_data.loc[:, acc_features] *= self.acc_factor
+                for session, session_name in enumerate(session_dir):
+                    session_file = os.path.join(sub_path, session_name)
+                    df = pd.read_csv(session_file)
 
-                session_data.insert(0, 'activity', session+1)
-                session_data.insert(0, 'subject', sub_id)
+                    LH_df = df[self.imu_LH.keys()]
+                    RH_df = df[self.imu_RH.keys()]
+                    LF_df = df[self.imu_LF.keys()]
+                    RF_df = df[self.imu_RF.keys()]
+                    phases_df = df[self.phases.keys()].astype(bool).astype(int)
+                    timestamps_df = df[self.timestamps.keys()]
 
-                session_data = session_data.astype({'time': float, 'subject': 'int8', 'activity': 'int8',
-                                    'LF_stance': 'int8', 'RF_stance': 'int8',
-                                    'LF_HS': 'int8', 'RF_HS': 'int8', 'LF_TO': 'int8', 'RF_TO': 'int8'})
+                    LH_df = LH_df.rename(index=str, columns=self.imu_LH)
+                    RH_df = RH_df.rename(index=str, columns=self.imu_RH)
+                    LF_df = LF_df.rename(index=str, columns=self.imu_LF)
+                    RF_df = RF_df.rename(index=str, columns=self.imu_RF)
+                    phases_df = phases_df.rename(index=str, columns=self.phases)
+                    timestamps_df = timestamps_df.rename(index=str, columns=self.timestamps)
+                    events_df = self.get_events(phases_df)
 
-                if sub_data is None:
-                    sub_data = session_data
-                else:
-                    sub_data = pd.concat([sub_data, session_data], axis=0, ignore_index=True)
+                    session_df = pd.concat([timestamps_df,
+                                              LH_df, RH_df, LF_df, RF_df,
+                                              events_df, phases_df], axis=1, sort=False)
 
-            if data is None:
-                data = sub_data
-            else:
-                data = pd.concat([data, sub_data], axis=0, ignore_index=True)
+                    acc_features = session_df.columns[session_df.columns.str.contains("acc")]
+                    session_df.loc[:, acc_features] *= self.acc_factor
 
-            sub_data.to_csv(to_file)
+                    session_df.insert(0, 'activity', session + 1)
+                    session_df.insert(0, 'subject', sub_id)
 
-        data.to_csv(os.path.join(self.target_path, "nonan" + ".csv"))
-        return data
+                    session_df = session_df.astype(self.types)
+
+                    if sub_df is None:
+                        sub_df = session_df
+                    else:
+                        sub_df = pd.concat([sub_df, session_df], axis=0, ignore_index=True)
+
+                sub_df.to_csv(to_file)
+                del sub_df
+
 
     def get_events(self, phases_data: pd.DataFrame) -> pd.DataFrame:
         event_names = ['HS', 'TO']
         event_indicators = [1, -1]
         events_data = pd.DataFrame(0, columns=self.foot_events, index=phases_data.index)
-        print()
 
         for phase in phases_data.columns:
             foot = phase[:2]
@@ -143,7 +137,6 @@ class nonan:
             for event, event_indicator in zip(event_names, event_indicators):
                 foot_event = foot + '_' + event
                 event_indices = np.argwhere(transitions == event_indicator).squeeze()
-                print(foot_event, event_indices.shape[0])
                 events = np.zeros(shape=transitions.shape)
                 events[event_indices] = 1
                 events_data[foot_event] = events
@@ -151,5 +144,5 @@ class nonan:
         return events_data
 
 if __name__ == '__main__':
-    constructor = nonan()
+    constructor = nonan(delete=True)
     constructor()

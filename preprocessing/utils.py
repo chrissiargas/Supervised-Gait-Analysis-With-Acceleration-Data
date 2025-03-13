@@ -1,5 +1,3 @@
-from lib2to3.pgen2.tokenize import group
-from sys import int_info
 
 import pandas as pd
 import numpy as np
@@ -10,7 +8,7 @@ from preprocessing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_
                                     add_angle_y_xz, add_angle_z_xy, add_angle_y_x, add_angle_x_yz)
 from preprocessing.filters import (butter_lowpass_filter, median_smoothing, lowpass_smoothing,
                                    butter_lowpass_filter2, butter_highpass_filter, time_lowpass_filter)
-from preprocessing.gait_parameters import add_parameter
+from preprocessing.gait_parameters import add_parameter, smooth_events
 from preprocessing.rotate import rotate_by_gravity, rotate_by_energy2, rotate_by_energy3, rotate_by_pca
 import matplotlib.pyplot as plt
 import os
@@ -77,6 +75,9 @@ def is_irregular(x: pd.DataFrame, period: int, checks: List[str]) -> pd.DataFram
     x = x.copy()
     x['irregular'] = 0
 
+    if checks is None:
+        return x
+
     groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
     period_id = groups.apply(lambda g: get_period_id(g, period))
     x['period_id'] = np.concatenate(period_id.values)
@@ -102,21 +103,18 @@ def is_irregular(x: pd.DataFrame, period: int, checks: List[str]) -> pd.DataFram
                        (x.period_id.isin(all_flags)),
                         'irregular'] = 1
 
-                # features = x.columns[x.columns.str.contains('acc')]
-                # act_df['acc_xyz'] = np.linalg.norm(act_df[features].values, axis=1)
-                #
-                # features = act_df.columns[act_df.columns.str.contains('acc')]
-                # name = (str(ds) + '-' + str(sub) + '-' + str(act) + '-')
-                # for f, flag in enumerate(all_flags):
-                #     window = act_df[act_df.period_id == flag]
-                #     window = window[features]
-                #
-                #     fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
-                #     axs.plot(window, linewidth=1, label=features)
-                #     plt.legend()
-                #     filepath = os.path.join(figpath, name + str(f) + ".png")
-                #     plt.savefig(filepath, format="png", bbox_inches="tight")
-                #     plt.close()
+                features = act_df.columns[act_df.columns.str.contains('acc|norm')]
+                name = (str(ds) + '-' + str(sub) + '-' + str(act) + '-')
+                for f, flag in enumerate(all_flags):
+                    window = act_df[act_df.period_id == flag]
+                    window = window[features]
+
+                    fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+                    axs.plot(window, linewidth=1, label=features)
+                    plt.legend()
+                    filepath = os.path.join(figpath, name + str(f) + ".png")
+                    plt.savefig(filepath, format="png", bbox_inches="tight")
+                    plt.close()
 
     return x
 
@@ -256,40 +254,59 @@ def rescale(x: pd.DataFrame, how: str = 'standard') -> pd.DataFrame:
 
     return x
 
-def get_parameters(x: pd.DataFrame, parameters: List[str], calculate: bool = True) -> pd.DataFrame:
+def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFrame:
     x = x.copy()
 
-    if parameters is None:
+    if labels is None or task is None:
         return x
 
-    if calculate:
+    if task == 'gait_phases':
         pm_cols = x.columns[x.columns.str.contains('stance')]
-        x = x.drop(pm_cols, axis=1)
 
-        if 'LF_stance' in parameters:
+        cols_to_drop = list(set(pm_cols) - set(labels))
+        x = x.drop(cols_to_drop, axis=1)
+
+        cols_to_drop = x.columns[x.columns.str.contains('HS|TO')]
+        x = x.drop(cols_to_drop, axis=1)
+
+    if task == 'gait_events':
+        all_events = x.columns[x.columns.str.contains('HS|TO')]
+        for in_event in labels:
+            x[in_event + '_raw'] = x[in_event]
+            x[in_event] = smooth_events(x, in_event, 'binary')
+
+        cols_to_drop = list(set(all_events) - set(labels))
+        x = x.drop(cols_to_drop, axis=1)
+
+        cols_to_drop = x.columns[x.columns.str.contains('stance')]
+        x = x.drop(cols_to_drop, axis=1)
+
+    if task == 'gait_parameters':
+        if 'LF_stance' in labels:
             x = add_parameter(x, 'LF_HS', 'LF_TO', 'LF_stance_time')
 
-        if 'RF_stance' in parameters:
+        if 'RF_stance' in labels:
             x = add_parameter(x, 'RF_HS', 'RF_TO', 'RF_stance_time')
 
-        if 'LF_swing' in parameters:
+        if 'LF_swing' in labels:
             x = add_parameter(x, 'LF_TO', 'LF_HS', 'LF_swing_time')
 
-        if 'RF_swing' in parameters:
+        if 'RF_swing' in labels:
             x = add_parameter(x, 'RF_TO', 'RF_HS', 'RF_swing_time')
 
-        if 'step' in parameters:
+        if 'step' in labels:
             x = add_parameter(x, 'RF_HS', 'RF_HS', 'step_time')
 
-        if 'LF_double_support' in parameters:
+        if 'LF_double_support' in labels:
             x = add_parameter(x, 'RF_HS', 'LF_TO', 'LF_double_support_time')
 
-        if 'RF_double_support' in parameters:
+        if 'RF_double_support' in labels:
             x = add_parameter(x, 'LF_HS', 'RF_TO', 'RF_double_support_time')
 
-    else:
-        pm_cols = x.columns[x.columns.str.contains('stance')]
-        cols_to_drop = list(set(pm_cols) - set(parameters))
+        cols_to_drop = x.columns[x.columns.str.contains('HS|TO')]
+        x = x.drop(cols_to_drop, axis=1)
+
+        cols_to_drop = x.columns[x.columns.str.contains('stance')]
         x = x.drop(cols_to_drop, axis=1)
 
     return x

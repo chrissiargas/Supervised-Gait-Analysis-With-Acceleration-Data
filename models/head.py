@@ -3,23 +3,40 @@ from keras.layers import (Input, LSTM, Conv2D, Conv1D, Dense,
                           Dropout, GlobalMaxPool1D, Activation, ReLU,
                           MaxPooling1D, ZeroPadding1D, Flatten,
                           LayerNormalization, Layer,
-                          BatchNormalization, Activation, Concatenate)
+                          BatchNormalization, Activation, Concatenate,)
 from keras.models import Model
 from keras import initializers
+from typing import Optional
+from keras import Sequential
 
-def attach_single_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'full_model') -> Model:
-    input = encoder.input
-    x = encoder.output
+from keras.src.layers import TimeDistributed
 
-    for i, hidden in enumerate(hidden_layers):
-        x = Dense(hidden)(x)
-        x = Activation('relu')(x)
+class squeeze(Layer):
+    def call(self, x):
+        return tf.squeeze(x, axis=-1)
 
-    x = Dense(n_units, kernel_initializer = initializers.glorot_uniform())(x)
-    outputs = Activation(activation='sigmoid')(x)
-    full_model = Model(input, outputs, name = name)
+class single_head(Layer):
+    def __init__(self,  n_units: int, hidden_units = [], bias: Optional[int] = None):
+        super().__init__()
 
-    return full_model
+        layers = []
+
+        layers.append(Flatten())
+        for hidden_unit in hidden_units:
+            layers.append(Dense(hidden_unit, kernel_initializer=initializers.he_normal()))
+            layers.append(ReLU())
+
+        layers.append(Dense(n_units,
+                            activation='sigmoid',
+                            bias_initializer=bias,
+                            kernel_initializer=initializers.glorot_normal()))
+        layers.append(squeeze())
+
+        self.head_net = Sequential(layers)
+
+    def call(self, inputs):
+        y = self.head_net(inputs)
+        return y
 
 def attach_double_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'full_model'):
     input = encoder.input
@@ -37,6 +54,20 @@ def attach_double_head(encoder: Model, n_units: int, hidden_layers = [], name: s
         outputs.append(output)
 
     outputs = Concatenate()(outputs)
+    full_model = Model(input, outputs, name = name)
+
+    return full_model
+
+def attach_temporal_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'full_model', bias: Optional[int] = None) -> Model:
+    input = encoder.input
+    x = encoder.output
+
+    for i, hidden in enumerate(hidden_layers):
+        x = TimeDistributed(Dense(hidden, activation='relu'))(x)
+
+    outputs = TimeDistributed(Dense(n_units, activation='sigmoid', bias_initializer=bias))(x)
+    outputs = squeeze()(outputs)
+
     full_model = Model(input, outputs, name = name)
 
     return full_model

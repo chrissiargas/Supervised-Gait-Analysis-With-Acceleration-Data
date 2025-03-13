@@ -6,243 +6,78 @@ from keras.layers import (Input, LSTM, Conv2D, Conv1D, Dense,
                           BatchNormalization, Multiply, Bidirectional, Permute, Lambda, RepeatVector,
                           GRU, ZeroPadding2D, MaxPooling2D)
 from keras.models import Model
-from keras import initializers
+from keras import initializers, Sequential
 import keras.backend as K
 from keras.src.layers import concatenate
 from tcn import TCN
 import keras
-
+from typing import Optional
 from preprocessing.utils import impute
 
+class conv1d_block(Layer):
+    def __init__(self,
+                 use_dropout: bool = False,
+                 kernel_size: int = 3,
+                 filters: int = 64,
+                 use_pooling: bool = True,
+                 use_norm: bool = False):
+        super().__init__()
 
-def conv1D_Block(inputs, n: int, use_dropout: bool = False,
-                 kernel_size: int = 3, filters: int = 64, use_pooling: bool = True,
-                 use_recurrent: bool = False, initializer = initializers.he_uniform()):
+        layers = []
 
-    padding = ZeroPadding1D(padding=1, name='ZeroPadding_' + str(n))
-    conv1D = Conv1D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='valid',
-        kernel_initializer=initializers.he_uniform()
-    )
-    norm = BatchNormalization()
-    relu = ReLU()
-    lstm = Bidirectional(LSTM(filters//2, activation='tanh', return_sequences=True))
-    dropout = Dropout(rate=0.3)
-    pooling = MaxPooling1D(2, strides=2)
+        if use_norm:
+            layers.append(BatchNormalization())
+        layers.append(ZeroPadding1D(padding=1))
+        layers.append(Conv1D(filters=filters,
+                             kernel_size=kernel_size,
+                             strides=1,
+                             padding='valid',
+                             kernel_initializer=initializers.he_normal()
+        ))
+        layers.append(ReLU())
+        if use_dropout:
+            layers.append(Dropout(0.4))
+        if use_pooling:
+            layers.append(MaxPooling1D(pool_size=2, strides=2))
 
-    x = norm(inputs)
-    if use_recurrent:
-        x = lstm(x)
-    x = padding(x)
-    x = conv1D(x)
-    x = relu(x)
+        self.conv_net = Sequential(layers)
 
-    if use_dropout:
-        x = dropout(x)
-    if use_pooling:
-        x = pooling(x)
+    def call(self, inputs):
+        y = self.conv_net(inputs)
+        return y
 
-    return x
 
-def conv1D_Block2(inputs, n: int, use_dropout: bool = False, kernel_size: int = 3, filters: int = 64, use_pooling: bool = True):
+class CNNGRU_encoder(Layer):
+    def __init__(self,  n_units: int):
+        super().__init__()
 
-    conv1D = Conv1D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='same',
-        kernel_initializer=initializers.he_uniform()
-    )
-    norm = BatchNormalization()
-    relu = ReLU()
+        self.conv1d_blocks = [conv1d_block(
+            filters=n_units,
+            kernel_size=3,
+            use_pooling=False,
+            use_norm=True,
+            use_dropout=False
+        ) for _ in range(3)]
 
-    dropout = Dropout(rate=0.3)
-    pooling = MaxPooling1D(2, strides=2)
+        self.grus = [
+            Bidirectional(GRU(n_units//2,
+                              activation='tanh',
+                              return_sequences=True))
+            for _ in range(2)
+        ]
 
-    x = conv1D(inputs)
-    x = norm(x)
-    x = relu(x)
+    def call(self, inputs):
+        x = inputs
 
-    conv1D = Conv1D(
-        filters=filters,
-        kernel_size=kernel_size,
-        strides=1,
-        padding='same',
-        kernel_initializer=initializers.he_uniform()
-    )
-    norm = BatchNormalization()
-    relu = ReLU()
+        if self.conv1d_blocks:
+            for conv1d in self.conv1d_blocks:
+                x = conv1d(x)
 
-    x = conv1D(x)
-    x = norm(x)
-    x= relu(x)
+        if self.grus:
+            for gru in self.grus:
+                x = gru(x)
 
-    if use_dropout:
-        x = dropout(x)
-    if use_pooling:
-        x = pooling(x)
-
-    return x
-
-def get_CNN_encoder(input_shape) -> Model:
-    inputs = Input(shape=input_shape)
-    x = inputs
-    initializer = initializers.he_uniform()
-
-    filters = [64, 64, 64, 64]
-    kernels = [3, 3, 3, 3]
-
-    recurrent = [False, False, False, False]
-    pooling = [True, True, True, False]
-    dropout = [False, False, False, False]
-
-    for i in range(len(filters)):
-        x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
-                         use_pooling=pooling[i], use_dropout=dropout[i],
-                         use_recurrent=recurrent[i], initializer=initializer)
-
-    x = Flatten()(x)
-    x = BatchNormalization()(x)
-
-    return Model(inputs, x, name = 'time_encoder')
-
-def get_spectro_encoder(input_shape, L) -> Model:
-    inputs = Input(shape=input_shape)
-    x = inputs
-    initializer = initializers.he_uniform()
-
-    norm = BatchNormalization()
-    x = norm(x)
-
-    padding = ZeroPadding2D(padding=(1, 1))  # same padding
-    cnn = Conv2D(
-        filters=16,
-        kernel_size=3,
-        strides=1,
-        padding='valid',
-        kernel_initializer=initializer
-    )
-    norm = BatchNormalization()
-    activation = ReLU()
-    pooling = MaxPooling2D((2, 2), strides=2)
-
-    x = padding(x)
-    x = cnn(x)
-    x = norm(x)
-    x = activation(x)
-    x = pooling(x)
-
-    padding = ZeroPadding2D(padding=(1, 1))  # same padding
-    cnn = Conv2D(
-        filters=32,
-        kernel_size=3,
-        strides=1,
-        padding='valid',
-        kernel_initializer=initializer
-    )
-    norm = BatchNormalization()
-    activation = ReLU()
-    pooling = MaxPooling2D((2, 2), strides=2)
-
-    x = padding(x)
-    x = cnn(x)
-    x = norm(x)
-    x = activation(x)
-    x = pooling(x)
-
-    cnn = Conv2D(
-        filters=64,
-        kernel_size=3,
-        strides=1,
-        padding='valid',
-        kernel_initializer=initializer
-    )
-    norm = BatchNormalization()
-    activation = ReLU()
-    pooling = MaxPooling2D((2, 2), strides=2)
-
-    x = cnn(x)
-    x = norm(x)
-    x = activation(x)
-    x = pooling(x)
-
-    flatten = Flatten()
-    dropout = Dropout(rate=0.5)
-
-    x = flatten(x)
-    x = dropout(x)
-
-    return Model(inputs=inputs, outputs=x, name = 'spectro_encoder')
-
-def get_fft_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
-    t_inputs = Input(shape=input_shape[0])
-    fft_inputs = Input(shape=input_shape[1])
-
-    t_encoder = get_CNN_encoder(input_shape[0])
-    fft_encoder = get_CNN_encoder(input_shape[1])
-
-    t_encodings = t_encoder(t_inputs)
-    fft_encodings = fft_encoder(fft_inputs)
-
-    encodings = concatenate((t_encodings, fft_encodings), axis=-1)
-
-    return Model((t_inputs, fft_inputs), encodings, name=name)
-
-def get_spectro_CNN_encoder(input_shape, name: str = 'CNN_encoder') -> Model:
-    t_inputs = Input(shape=input_shape[0])
-    spectro_inputs = Input(shape=input_shape[1])
-
-    L = 64
-    t_encoder = get_CNN_encoder(input_shape[0], L)
-    spectro_encoder = get_spectro_encoder(input_shape[1], L)
-
-    t_encodings = t_encoder(t_inputs)
-    spectro_encodings = spectro_encoder(spectro_inputs)
-
-    encodings = concatenate((t_encodings, spectro_encodings), axis=-1)
-
-    model = Model((t_inputs, spectro_inputs), encodings, name=name)
-    return model, t_encoder, spectro_encoder
-
-def get_CNNGRU_encoder(input_shape) -> Model:
-    inputs = Input(shape=input_shape)
-    x = inputs
-
-    x = conv1D_Block(x, 1, filters=32, kernel_size=3, use_pooling=False, use_dropout=False)
-    x = Bidirectional(GRU(32, activation='tanh', return_sequences=True))(x)
-    x = Bidirectional(GRU(32, activation='tanh', return_sequences=True))(x)
-    x = Flatten()(x)
-
-    return Model(inputs, x)
-
-def get_CNN_encoder2(input_shape, name: str = 'CNN_encoder') -> Model:
-    inputs = Input(shape=input_shape)
-    x = inputs
-
-    filters = [32, 64, 128, 256]
-    kernels = [3, 3, 3, 3]
-    pooling = [True, True, True, False]
-    dropout = [True, True, True, True]
-
-    for i in range(len(filters)):
-        x = conv1D_Block(x, i + 1, filters=filters[i], kernel_size=kernels[i],
-                         use_pooling=pooling[i], use_dropout=dropout[i])
-
-    attention_data = keras.layers.Lambda(lambda x: x[:,:,:128])(x)
-    attention_softmax = keras.layers.Lambda(lambda x: x[:,:,128:])(x)
-
-    attention_softmax = keras.layers.Softmax()(attention_softmax)
-    x = keras.layers.Multiply()([attention_softmax,attention_data])
-
-    x = keras.layers.Dense(units=256,activation='sigmoid')(x)
-    x = BatchNormalization()(x)
-
-    x = Flatten()(x)
-
-    return Model(inputs, x, name=name)
+        return x
 
 class channel_attention(keras.layers.Layer):
     def __init__(self, n_filters, kernel_size, dilation_rate):

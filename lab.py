@@ -8,7 +8,7 @@ from scipy import signal
 import matplotlib.pyplot as plt
 import numpy as np
 
-x = pd.DataFrame({'A': [1,2], 'B': [3,4]})
+x = pd.DataFrame({'A': [0.2,0.8], 'B': [3,4]})
 print(x)
-x = x.rename(columns={'A':'B', 'B':'A'})
+x['A_int'] = x['A'].round(decimals=0)
 print(x)

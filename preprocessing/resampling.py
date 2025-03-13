@@ -9,10 +9,11 @@ import os
 from datetime import datetime
 figpath = os.path.join('archive', 'figures')
 
-def resample(df: pd.DataFrame, old_fs: int, new_fs: int, how: str = 'decimate') -> pd.DataFrame:
-    imu = df.columns[df.columns.str.contains('acc|gyr')]
+def resample(df: pd.DataFrame, old_fs: int, new_fs: int, how: str = 'decimate', r: float = 1.) -> pd.DataFrame:
+    imu = df.columns[df.columns.str.contains('acc|gyr|quat|course|pitch|roll')]
     phases = df.columns[df.columns.str.contains('stance')]
     events = df.columns[df.columns.str.contains('HS|TO')]
+    mode_exists = 'mode' in df.columns
 
     resampled_ds = pd.DataFrame()
     step = 1000. / new_fs
@@ -24,19 +25,18 @@ def resample(df: pd.DataFrame, old_fs: int, new_fs: int, how: str = 'decimate') 
             for pos_id, pos_df in act_df.groupby('position'):
                 x = pos_df.interpolate(method='linear')
                 old_imu = x[imu].values
+                old_t = x['time'].values * r
 
                 if how == 'resampy':
-                    old_t = x['time'].values
                     new_imu = resampy.resample(old_imu, old_fs, new_fs, axis=0)
                 elif how == 'decimate':
-                    old_t = x['time'].values * 1000.
                     new_imu = ssn.decimate(x=old_imu, q=int(T_scale), ftype='fir',axis=0)
 
                 resampled_df = pd.DataFrame(new_imu, columns=imu)
                 new_t =  np.arange(start=old_t[0], stop=old_t[0] + new_imu.shape[0] * step, step=step)
 
                 if len(phases) > 0:
-                    old_phases = x[phases].values
+                    old_phases = x[phases].values.astype(int)
                     new_phases = interp1d(old_t, old_phases, kind='nearest', axis=0, fill_value='extrapolate')(new_t)
                     new_phases = pd.DataFrame(new_phases, columns=phases)
                     resampled_df = pd.concat((resampled_df, new_phases), axis=1)
@@ -64,6 +64,14 @@ def resample(df: pd.DataFrame, old_fs: int, new_fs: int, how: str = 'decimate') 
                 resampled_df['position'] = pos_id
                 resampled_df['activity'] = act_id
                 resampled_df['subject'] = sub_id
+
+                if mode_exists:
+                    mode_to_int = {k:v for v,k in enumerate(x['mode'].unique())}
+                    int_to_mode = {v:k for k,v in mode_to_int.items()}
+                    modes = x['mode'].map(mode_to_int).values
+                    f = interp1d(old_t, modes, kind='nearest', axis=0, fill_value='extrapolate')
+                    new_modes = f(new_t)
+                    resampled_df['mode'] = [int_to_mode[new_mode] for new_mode in new_modes]
 
                 resampled_ds = pd.concat((resampled_ds, resampled_df), axis=0, ignore_index=True)
 

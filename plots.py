@@ -3,55 +3,103 @@ import os
 import matplotlib.pyplot as plt
 from datetime import datetime
 import pandas as pd
-figpath = os.path.join('archive', 'figures')
-second_plot = True
 from typing import *
+
 import preprocessing.fft as fft
+import shutil
+
+second_plot = True
+print(f"Current working directory: {os.getcwd()}")
 
 
-def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None, subject: int = 5,
-                activity: Optional[int] = None, start: Optional[int] = None, length: Optional[int] = None,
-                show_events: bool = False, features: Optional[str] = None, sign: bool = False):
+def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
+                subject: Optional[int] = None, activity: Optional[int] = None,
+                mode: Optional[str] = None, population: Optional[str] = None,
+                start: Optional[int] = None, length: Optional[int] = None,
+                show_events: bool = False, show_phases: bool = False,
+                features: Optional[str] = None, sign: bool = False,
+                turn: Optional = None, raw: bool = False,
+                figpath: Optional[str] = None):
 
-    x = x[x['subject_id'] == subject]
+    if figpath is None:
+        figpath = os.path.join('archive', 'figures')
+
+    if subject is not None:
+        x = x[x['subject_id'] == subject]
     if activity is not None:
         x = x[x['activity_id'] == activity]
     if dataset is not None:
         x = x[x['dataset'] == dataset]
+    if mode is not None:
+        x = x[x['mode'] == mode]
+    if population is not None:
+        x = x[x['population'] == population]
 
     if features is None:
         features = 'acc|norm|jerk|angle'
 
+    if turn is not None:
+        turn = str(turn)
+    else:
+        turn = ''
+
     positions = pd.unique(x['position'])
     features = x.columns[x.columns.str.contains(features)]
-    all_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
+    events_cols = x.columns[x.columns.str.contains('HS|TO')]
+    phases_cols = x.columns[x.columns.str.contains('stance')]
 
     if pos in positions:
         x = x[x['position'] == pos]
 
         t = x['timestamp'].values
         sig = x[features].values
-        evs = x[all_events].values
+        evs = x[events_cols].values
+        phases = x[phases_cols].values
 
         if start is not None and length is not None:
             t = t[start: start + length]
+            t = pd.to_datetime(t, unit='ms')
             sig = sig[start: start + length]
+            evs = evs[start: start + length]
+            phases = phases[start: start + length] * 10
+
             if sign:
                 sig = np.sign(np.mean(sig, axis=0)) * sig
-            evs = evs[start: start + length]
 
         fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
-        axs.plot(sig, linewidth=1, label=features)
+        axs.plot( t, sig, linewidth=1, label=features)
 
         if show_events:
-            colors = ['b', 'k', 'r', 'g']
-            for color, ev, name in zip(colors, evs.transpose(), all_events):
-                ev_ixs = np.where(ev == 1)
-                axs.vlines(ev_ixs, 0, 1, transform=axs.get_xaxis_transform(), colors=color,
-                           linewidth=1, linestyles='dashed', label=name)
+            for ev, name in zip(evs.transpose(), events_cols):
+                if 'prob' in name:
+                    axs.plot(t, ev * 10., linewidth=2, linestyle='solid', label=name)
+                    continue
+
+                elif 'pred' in name:
+                    continue
+
+                elif 'raw' in name and raw:
+                    ev_ixs = np.where(ev == 1)
+                    axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
+                               linewidth=1, linestyle='solid', label=name)
+
+                elif 'real' in name:
+                    axs.plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
+                    continue
+
+        elif show_phases:
+            for phase, name in zip(phases.transpose(), phases_cols):
+                if 'prob' in name:
+                    axs.plot(t, phase, linewidth=2, linestyle='solid', label=name)
+
+                elif 'pred' in name:
+                    axs.plot(t, phase, linewidth=2, linestyle='solid', label=name)
+
+                else:
+                    axs.plot(t, phase, linewidth=2, linestyle='dashed', label=name)
 
         plt.legend()
-        filepath = os.path.join(figpath, str(subject) + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
+        filepath = os.path.join(figpath, str(subject) + '-' + turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
         plt.savefig(filepath, format="png", bbox_inches="tight")
         plt.close()
 

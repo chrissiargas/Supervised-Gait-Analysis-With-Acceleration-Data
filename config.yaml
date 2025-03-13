@@ -4,29 +4,29 @@ data_args:
   activities:
   - walk
   position: LH
-  dataset: synthetic
+  dataset: marea
 
 main_args:
   load_data: false
 
   cleaner: linear
   checks:
-  - artifacts
-  orient_method: gravity_pca
-  include_gravity: false
+  orient_method:
+  include_gravity: true
   gravity_cutoff: 0.1
   new_features:
-  filter: lowpass
+  filter:
   filter_window: 3
   filter_cutoff: 10.0
   rescaler:
 
-  calc_params: true
-  parameters:
-  - LF_stance
-  task: gait_phases
+  labels:
+  - LF_HS
+  task: gait_events
+  targets: one
+  target_position: center
 
-  trim_duration: 2
+  trim_duration: 5
   fft: false
   spectrogram: false
   stft_duration: 1.6
@@ -34,25 +34,27 @@ main_args:
 
   split_type: loso    #loso, start, end
   test_hold_out:
-  - 2
+  - 3
   validation: false
   val_hold_out: 1
 
   duration: 4 # seconds
-  stride: 1 # seconds
+  stride: 1   # seconds
 
   features: # List(norm_xyz, norm_xy, norm_yz, norm_xz, jerk, low_x, low_y, low_z)
   - acc_x
   - acc_y
   - acc_z
   augmentations: # List(rotate, jitter, scale)
-  batch_size: 64
+  batch_size: 128
 
-  architecture: cnn
+  architecture: cnn-gru
+  rotation_layer: rotate_by_axis
   optimizer: adam
   epochs: 250
   learning_rate: 0.0001
   head: single
+  class_weights: true
 
   metrics:
   - f1

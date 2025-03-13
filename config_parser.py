@@ -74,10 +74,6 @@ class Parser:
         self.filter_cutoff = args.main_args['filter_cutoff']
         self.rescaler = args.main_args['rescaler']
 
-        self.calc_params = args.main_args['calc_params']
-        self.parameters = args.main_args['parameters']
-        self.task = args.main_args['task']
-
         self.split_type = args.main_args['split_type']
         self.test_hold_out = args.main_args['test_hold_out']
         self.validation = args.main_args['validation']
@@ -89,6 +85,11 @@ class Parser:
         self.length = int(self.duration * self.fs)
         self.stride = args.main_args['stride']
         self.step = int(self.stride * self.fs) if self.stride != 0 else 1
+
+        self.labels = args.main_args['labels']
+        self.task = args.main_args['task']
+        self.targets = args.main_args['targets']
+        self.target_position = args.main_args['target_position']
 
         self.features = args.main_args['features']
         self.augmentations = args.main_args['augmentations']
@@ -104,10 +105,12 @@ class Parser:
         self.batch_size = args.main_args['batch_size']
 
         self.architecture = args.main_args['architecture']
+        self.rotation_layer = args.main_args['rotation_layer']
         self.epochs = args.main_args['epochs']
         self.optimizer = args.main_args['optimizer']
         self.learning_rate = float(args.main_args['learning_rate'])
         self.head = args.main_args['head']
+        self.class_weights = args.main_args['class_weights']
 
         self.metrics = args.main_args['metrics']
 

@@ -1,8 +1,12 @@
 import os
 import shutil
+
+import matplotlib.pyplot as plt
 import pandas as pd
 from tqdm import tqdm
 from scipy import io
+
+import matplotlib.pyplot as plt
 
 # functions to create binary variable and index
 def get_binary(subject_data, activity_as_string, start_time, end_time):
@@ -30,6 +34,7 @@ def get_index(subject_data, activity_as_string, start_time, end_time):
 
     return subject_data
 
+
 def get_hsto(subject_data, GT, foot_event_as_string, activity_as_string):
     event_as_string = foot_event_as_string + '_' + activity_as_string
     timestamps = pd.DataFrame(GT[foot_event_as_string][0, 0], columns=[event_as_string])
@@ -52,7 +57,7 @@ class marea:
         self.source_path = os.path.join(
             os.path.expanduser('~'),
             'datasets',
-            'MAREA_dataset'
+            'MAREA'
         )
 
         self.target_path = os.path.join(os.path.expanduser('~'),
@@ -87,11 +92,9 @@ class marea:
             subject_data['subject'] = subject_id
             if id == 0:
                 combined_data = subject_data
-
             else:
                 combined_data = pd.concat([combined_data, subject_data], axis=0, ignore_index=True)
 
-        combined_data = combined_data.fillna(0)
         combined_data.to_csv(os.path.join(self.target_path, "marea_full" + ".csv"), encoding='utf-8')
 
         return combined_data
@@ -115,15 +118,15 @@ class marea:
 
         # Since the column headings are accX, accY, accZ, we will need to rename them to know which accelerometer they came from
         # To that we add a "_LF/RF/Waist/Wrist"
-        LF_DATA_2 = LF_DATA.rename(index=str, columns={"accX": "accX_LF", "accY": "accY_LF", "accZ": "accZ_LF"})
-        RF_DATA_2 = RF_DATA.rename(index=str, columns={"accX": "accX_RF", "accY": "accY_RF", "accZ": "accZ_RF"})
-        Waist_DATA_2 = Waist_DATA.rename(index=str,
+        LF_DATA = LF_DATA.rename(index=str, columns={"accX": "accX_LF", "accY": "accY_LF", "accZ": "accZ_LF"})
+        RF_DATA = RF_DATA.rename(index=str, columns={"accX": "accX_RF", "accY": "accY_RF", "accZ": "accZ_RF"})
+        Waist_DATA = Waist_DATA.rename(index=str,
                                          columns={"accX": "accX_Waist", "accY": "accY_Waist", "accZ": "accZ_Waist"})
-        Wrist_DATA_2 = Wrist_DATA.rename(index=str, columns={"accX": "accX_Wrist", "accY": "accY_Wrist",
+        Wrist_DATA = Wrist_DATA.rename(index=str, columns={"accX": "accX_Wrist", "accY": "accY_Wrist",
                                                              "accZ": "accZ_Wrist"})  # Comment out for subject 4
 
         # Merge the columns together
-        subject_data = pd.concat([LF_DATA_2, RF_DATA_2, Waist_DATA_2, Wrist_DATA_2], axis=1, sort=False)
+        subject_data = pd.concat([LF_DATA, RF_DATA, Waist_DATA, Wrist_DATA], axis=1, sort=False)
         subject_data['time'] = subject_data.index
 
         return subject_data

@@ -8,10 +8,10 @@ import gc
 
 from parameters import sl_params
 from preprocessing.building import builder
-from models.sl_training import train_evaluate
+from models.supervised import train_evaluate
+from visualize import visualize
 
 import matplotlib.pyplot as plt
-generate = False
 
 def reset_tensorflow_keras_backend():
     import tensorflow as tf
@@ -73,22 +73,62 @@ def save(path, history, hparams=None):
 
     plt.close(fig)
 
-def sl_experiment():
+def sl_experiment(generate):
     data = builder(generate)
     train_evaluate(data, summary=True, verbose=True)
     del data
 
     return None, None
 
-def supervised(archive_path):
+def supervised(vis: bool = False):
+    generate = False
     parameters = sl_params
 
     for param_name, param_value in parameters.items():
         config_edit('main_args', param_name, param_value)
 
-    archive = os.path.join(archive_path, "save-" + time.strftime("%Y%m%d-%H%M%S"))
-
     reset_tensorflow_keras_backend()
+    sl_experiment(generate)
 
-    xp_model, xp_history = sl_experiment()
+
+    # tasks_params = ['gait_events', 'gait_phases']
+    # targets_params = ['one', 'all']
+    # head_params = ['single', 'temporal']
+    #
+    # for task_param in tasks_params:
+    #     parameters['task'] = task_param
+    #     if task_param == 'gait_events':
+    #         parameters['class_weights'] = True
+    #         labels_params = ['LF_HS', 'LF_TO', 'RF_HS', 'RF_TO']
+    #     if task_param == 'gait_phases':
+    #         parameters['class_weights'] = False
+    #         labels_params = ['LF_stance', 'RF_stance']
+    #
+    #     for target_param, head_param in zip(targets_params, head_params):
+    #         parameters['targets'] = target_param
+    #         parameters['head'] = head_param
+    #
+    #         for label_param in labels_params:
+    #             parameters['labels'] = [label_param]
+    #
+    #             for param_name, param_value in parameters.items():
+    #                 config_edit('main_args', param_name, param_value)
+    #
+    #             path = os.path.join(
+    #                 os.path.expanduser('~'),
+    #                 'Pictures',
+    #                 task_param + '-' + target_param + '-' + label_param,
+    #             )
+    #
+    #             if os.path.exists(path):
+    #                 continue
+    #
+    #             reset_tensorflow_keras_backend()
+    #             sl_experiment(generate)
+    #             generate = False
+    #
+    #             if vis:
+    #                 os.mkdir(path)
+    #                 visualize(path)
+
 

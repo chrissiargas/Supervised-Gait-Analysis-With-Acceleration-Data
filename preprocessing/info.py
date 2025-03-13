@@ -26,13 +26,13 @@ class info:
 
             self.act_pairs = {
                 "undefined": 'no pair',
-                "treadmill_walk": 0,
-                "treadmill_run": 4,
-                "treadmill_slope_walk": 1,
-                "indoor_walk": 2,
-                "indoor_run": 5,
-                "outdoor_walk": 3,
-                "outdoor_run": 6
+                "treadmill_walk": 1,
+                "treadmill_run": 5,
+                "treadmill_slope_walk": 2,
+                "indoor_walk": 3,
+                "indoor_run": 6,
+                "outdoor_walk": 4,
+                "outdoor_run": 7
             }
 
             self.pos_pairs = {
@@ -41,6 +41,16 @@ class info:
                 'Waist': 'waist',
                 'Wrist': 'left_lower_arm'
             }
+
+            self.columns = {'position': str, 'subject': 'int16',
+                            'activity': 'int8', 'time': 'float64', 'is_NaN': 'boolean',
+                            'acc_x': 'float64', 'acc_y': 'float64', 'acc_z': 'float64',
+                            'LF_HS': 'int8', 'RF_HS': 'int8', 'LF_TO': 'int8', 'RF_TO': 'int8',
+                            'LF_stance': 'int8', 'RF_stance': 'int8'}
+
+            self.imu_features = {"accX": "acc_x",
+                                "accY": "acc_y",
+                                "accZ": "acc_z"}
 
         if dataset == 'nonan':
             self.path = os.path.join(
@@ -63,6 +73,46 @@ class info:
 
             self.indicators = ['time', 'subject', 'activity']
 
+            self.columns = {'position': str, 'subject': 'int16',
+                            'activity': 'int8', 'time': 'float64', 'is_NaN': 'boolean',
+                            'acc_x': 'float64', 'acc_y': 'float64', 'acc_z': 'float64',
+                            'LF_HS': 'int8', 'RF_HS': 'int8', 'LF_TO': 'int8', 'RF_TO': 'int8',
+                            'LF_stance': 'int8', 'RF_stance': 'int8'}
+
+            self.imu_features = {"accX": "acc_x",
+                                "accY": "acc_y",
+                                "accZ": "acc_z"}
+
+        if dataset == 'MMgait':
+            self.path = os.path.join(
+                os.path.expanduser('~'),
+                config.path,
+                'MMgait_new'
+            )
+
+            self.initial_fs = 60
+            self.events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
+            self.phases = ['LF_stance', 'RF_stance']
+            self.positions = ['LF', 'RF', 'LH', 'RH']
+            self.indicators = ['subject', 'activity', 'mode', 'time']
+
+            self.pos_pairs = {
+                'LH': 'left_lower_arm',
+                'RH': 'right_lower_arm',
+                'LF': 'left_lower_leg',
+                'RF': 'right_lower_leg'
+            }
+
+            self.columns = {'position': str, 'subject': 'int16',
+                            'activity': 'int8', 'mode': str, 'time': 'float64', 'is_NaN': 'boolean',
+                            'acc_x': 'float64', 'acc_y': 'float64', 'acc_z': 'float64',
+                            'LF_HS': 'int8', 'RF_HS': 'int8', 'LF_TO': 'int8', 'RF_TO': 'int8',
+                            'LF_stance': 'int8', 'RF_stance': 'int8'}
+
+            self.imu_features = {"accX": "acc_x",
+                                "accY": "acc_y",
+                                "accZ": "acc_z"}
+
         if dataset == 'synthetic':
             self.pos_pairs = {
                 'Waist': 'waist',
@@ -72,3 +122,7 @@ class info:
                 'LF': 'left_lower_leg',
                 'RF': 'right_lower_leg'
             }
+
+
+
+

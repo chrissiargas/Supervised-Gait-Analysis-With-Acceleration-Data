@@ -26,10 +26,8 @@ for gpu in gpus:
 
 def main():
     experiment = 'supervised'
-    archive = os.path.join("archive", experiment)
-
     if experiment == 'supervised':
-        supervised(archive)
+        supervised(vis=True)
 
 if __name__ == '__main__':
     main()

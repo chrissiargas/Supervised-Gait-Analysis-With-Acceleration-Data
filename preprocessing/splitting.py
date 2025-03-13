@@ -11,30 +11,8 @@ def split(x: pd.DataFrame, split_type: str, hold_out: Union[List, int, float, st
     train_sgs, test_sgs = (sgs.copy(), sgs.copy()) if sgs is not None else (None, None)
 
     if split_type == 'dataset':
-        if hold_out == 'marea':
-            train = x[x['dataset'] == 'nonan']
-            test = x[x['dataset'] == 'marea']
-
-        elif hold_out == 'nonan':
-            train = x[x['dataset'] == 'marea']
-            test = x[x['dataset'] == 'nonan']
-
-    elif split_type == 'loso_marea':
-        subs = x[x['dataset'] == 'marea']['subject_id'].unique().tolist()
-        rng = np.random.default_rng(seed=seed)
-
-        if isinstance(hold_out, float):
-            r = int(len(subs) * hold_out)
-            test_subs = rng.choice(subs, r, replace=False)
-        elif isinstance(hold_out, int):
-            r = hold_out
-            test_subs = rng.choice(subs, r, replace=False)
-        elif isinstance(hold_out, list):
-            test_subs = hold_out
-
-        train_subs = list(set(subs) - set(test_subs))
-        test = x[(x['dataset'] == 'marea') & (x['subject_id'].isin(test_subs))]
-        train = x[(x['dataset'] == 'nonan') | (x['subject_id'].isin(train_subs))]
+        test = x[x['dataset'] == hold_out]
+        train = x[x['dataset'] != hold_out]
 
     elif split_type == 'loso':
         subs = x['subject_id'].unique().tolist()
@@ -57,6 +35,28 @@ def split(x: pd.DataFrame, split_type: str, hold_out: Union[List, int, float, st
         if sgs is not None:
             train_sgs = {k: v for k, v in sgs.items() if k in train_subs}
             test_sgs = {k: v for k, v in sgs.items() if k in test_subs}
+
+    elif split_type == 'loao':
+        acts = x['activity_id'].unique().tolist()
+        rng = np.random.default_rng(seed=seed)
+
+        if isinstance(hold_out, float):
+            r = int(len(acts) * hold_out)
+            test_acts = rng.choice(acts, r, replace=False)
+        elif isinstance(hold_out, int):
+            r = hold_out
+            test_acts = rng.choice(acts, r, replace=False)
+        elif isinstance(hold_out, list):
+            test_acts = hold_out
+
+        train_acts = list(set(acts) - set(test_acts))
+
+        train = x[x['activity_id'].isin(train_acts)]
+        test = x[x['activity_id'].isin(test_acts)]
+
+        if sgs is not None:
+            train_sgs = {k: v for k, v in sgs.items() if k in train_acts}
+            test_sgs = {k: v for k, v in sgs.items() if k in test_acts}
 
     elif 'start' in split_type or 'end' in split_type:
         subs = x['subject_id'].unique().tolist()

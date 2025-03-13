@@ -63,7 +63,7 @@ def get_variance(x: pd.DataFrame, by: str = '') -> np.ndarray:
 def check_stationary(x: pd.DataFrame) -> pd.DataFrame:
     features = x.columns[x.columns.str.contains('acc')]
     vars = x.groupby('period_id').apply(lambda gr: get_variance(gr[features], by='max'))
-    ids = vars[vars < 0.5].keys()
+    ids = vars[vars < 5].keys()
 
     return ids
 

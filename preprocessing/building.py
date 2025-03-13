@@ -1,4 +1,7 @@
 from datetime import datetime
+
+import keras
+
 from config_parser import Parser
 import os
 import pandas as pd
@@ -18,28 +21,37 @@ import preprocessing.fft as fft
 import random
 from tqdm import tqdm
 from plots import *
+from preprocessing.extract import extractor
+from scipy.spatial.transform import Rotation
 
 seed = 45
-position = 'left_lower_arm'
+position = 'left_lower_leg'
 dataset = None
-subject = 1
-activity = 2
-start = 400
-length = 400
+subject = 1001
+activity = 1
+start = 0
+length = 1000
+features = 'acc'
+mode = None
+population = None
+
+figpath = os.path.join('archive', 'figures')
+second_plot = True
 
 def plot_all(data):
     for sub in sorted(pd.unique(data['subject_id'])):
-        if sub > 100:
-            act = 100 + activity
-        else:
-            act = activity
-
-        plot_signal(data, position, dataset, sub, act, start, length,
-                    show_events=second_plot, features='acc')
+        plot_signal(data, position, dataset, sub, activity, mode, population,
+                    start, length,
+                    show_events=second_plot, features=features)
 
 def plot_one(data):
-    plot_signal(data, position, dataset, subject, activity, start, length,
-                show_events=second_plot, features='acc')
+    for i, start in enumerate([0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
+                  11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
+                  21000, 22000, 23000, 240000]):
+
+        plot_signal(data, position, dataset, subject, activity, mode, population,
+                    start, length,
+                    show_events=second_plot, features=features, turn=i)
 
 def set_shuffle(set, idx):
     a, b, c = set
@@ -51,11 +63,12 @@ def set_shuffle(set, idx):
         group_indices = random.sample(group_idx, len(group_idx))
         shuffled_idx.extend(group_indices)
 
-
     return a[shuffled_idx], b[shuffled_idx], c[shuffled_idx]
+
 
 class builder:
     def __init__(self, generate: bool = False):
+        self.classes = None
         self.channels = None
         self.info = None
         self.output_type = None
@@ -65,10 +78,18 @@ class builder:
         self.transformer = None
         self.train_dict = None
         self.randomize = True
+        self.data = None
+        self.class_weights = {}
 
         config = Parser()
         config.get_args()
         self.conf = config
+
+        try:
+            for f in os.listdir(figpath):
+                os.unlink(os.path.join(figpath,f))
+        except OSError as e:
+            print("Error: %s - %s." % (e.filename, e.strerror))
 
         self.path = os.path.join(
             os.path.expanduser('~'),
@@ -76,163 +97,141 @@ class builder:
             'wrist_gait'
         )
 
-        self.extract_path = os.path.join(
-            self.path,
-            'extracted.csv'
-        )
-
         if generate:
-            if self.conf.dataset == 'marea':
-                self.marea_extract()
-            elif self.conf.dataset == 'nonan':
-                self.nonan_extract()
-            elif self.conf.dataset == 'synthetic':
-                self.synthetic_extract()
+            extract_data = extractor(dataset=self.conf.dataset)
+            extract_data()
 
-        self.info = info(self.conf.dataset)
-        self.data = pd.read_csv(self.extract_path)
+        self.load_data()
 
-    def __call__(self, verbose: bool = False):
-        if self.conf.load_data:
-            train, test, val = self.load()
+    def load_data(self):
+        subject_dir = sorted(os.listdir(self.path))
+        for sub_file in tqdm(subject_dir):
+            sub_path = os.path.join(self.path, sub_file)
+            sub_df = pd.read_csv(sub_path)
 
-        else:
-            train, test, val, train_sgs, test_sgs, val_sgs = self.preprocess(verbose)
-            self.save(train, test, val)
+            if self.data is None:
+                self.data = sub_df
+            else:
+                self.data = pd.concat([self.data, sub_df], axis=0, ignore_index=True)
+
+        self.data = self.data.sort_values(by=['dataset', 'subject'])
+
+    def __call__(self):
+        train, test, val = self.preprocess()
 
         if self.randomize:
             train_idx = separate(train)
             train = set_shuffle(train, train_idx)
 
         self.get_transformers()
-        self.output_shape = train[1].shape[-1]
-        self.output_type = tf.float32
-        self.classes = self.conf.parameters
+        self.get_shapes(train)
+        self.get_class_weights(train)
 
         self.train_size = train[0].shape[0]
         self.test_size = test[0].shape[0]
         self.val_size = val[0].shape[0]
 
-        train = self.generate(train, train_sgs, training=True)
-        test = self.generate(test, test_sgs, training=False)
-        val = self.generate(val, val_sgs, training=False)
+        train = self.generate(train, training=True)
+        test = self.generate(test, training=False)
+        val = self.generate(val, training=False)
 
         return self.batch_prefetch(train, test, val)
 
-    def generate(self, S: Tuple[np.ndarray, np.ndarray, np.ndarray],
-                 sgs: Optional[np.ndarray] = None, training: bool = True):
+    def generate(self, S: Tuple[np.ndarray, np.ndarray, np.ndarray], training: bool = True):
         X, Y, _ = S
-        output_shape = () if self.output_shape == 1 else self.output_shape
+
         def gen():
             for i, (x_, y_) in enumerate(zip(X, Y)):
                 x = self.transformer(x_, training)
                 y = tf.convert_to_tensor(y_, dtype=tf.float32)
                 y = tf.squeeze(y)
 
-                if self.conf.fft:
-                    f = self.fft_transformer(x, training)
-                    yield (x, f), y
-                if self.conf.spectrogram:
-                    f_ = sgs[i]
-                    f = self.fft_transformer(f_, training)
-                    yield (x, f), y
-
                 yield x, y
 
-        if self.conf.fft or self.conf.spectrogram:
-            return tf.data.Dataset.from_generator(
-                gen,
-                output_types=((tf.float32, tf.float32), tf.float32),
-                output_shapes=((self.input_shape, self.fft_input_shape), output_shape),
-            )
-        else:
-            return tf.data.Dataset.from_generator(
-                gen,
-                output_types=(tf.float32, tf.float32),
-                output_shapes=(self.input_shape, output_shape)
-            )
+        return tf.data.Dataset.from_generator(
+            gen,
+            output_types=(tf.float32, tf.float32),
+            output_shapes=(self.input_shape, self.output_shape)
+        )
 
     def batch_prefetch(self, train, test, val):
-        train = train.shuffle(10000).repeat().batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
-        test = test.batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
-        val = val.batch(batch_size=self.conf.batch_size).prefetch(tf.data.AUTOTUNE)
+        train = (train.shuffle(1000).
+                 repeat().
+                 batch(batch_size=self.conf.batch_size).
+                 prefetch(tf.data.AUTOTUNE))
+
+        test = (test.batch(batch_size=self.conf.batch_size).
+                prefetch(tf.data.AUTOTUNE))
+
+        val = (val.batch(batch_size=self.conf.batch_size).
+               prefetch(tf.data.AUTOTUNE))
 
         return train, test, val
-
-    def load(self):
-        load_path = os.path.join('attic', 'data', 'data.pkl')
-
-        pkl_file = open(load_path, 'rb')
-        my_data = pickle.load(pkl_file)
-        train = my_data['train_X'], my_data['train_Y'], my_data['train_T']
-        test = my_data['test_X'], my_data['test_Y'], my_data['test_T']
-
-        if self.conf.validation:
-            val = my_data['val_X'], my_data['val_Y'], my_data['val_T']
-        else:
-            val = None
-
-        pkl_file.close()
-
-        return train, test, val
-
-    def save(self, train: Tuple[np.ndarray, np.ndarray, np.ndarray],
-             test: Tuple[np.ndarray, np.ndarray, np.ndarray],
-             val: Optional[Tuple[np.ndarray, np.ndarray, np.ndarray]] = None):
-        save_path = os.path.join('attic', 'data', 'data.pkl')
-
-        my_data = {'train_X': train[0],
-                   'train_Y': train[1],
-                   'train_T': train[2],
-                   'val_X': val[0],
-                   'val_Y': val[1],
-                   'val_T': val[2],
-                   'test_X': test[0],
-                   'test_Y': test[1],
-                   'test_T': test[2]}
-
-        output = open(save_path, 'wb')
-        pickle.dump(my_data, output)
-
-        output.close()
 
     def get_transformers(self):
         self.transformer = transformer(self.channels)
+
+    def get_shapes(self, data):
         self.input_shape = self.transformer.get_shape()
 
-        if self.conf.fft:
-            self.fft_transformer = fourier()
-            self.fft_input_shape = self.fft_transformer.get_shape()
-        elif self.conf.spectrogram:
-            self.fft_transformer = specter()
-            self.fft_input_shape = self.fft_transformer.get_shape()
+        if self.conf.targets == 'one':
+            if len(self.conf.labels) == 1:
+                self.output_shape = ()
+            if len(self.conf.labels) > 1:
+                self.output_shape = data[1].shape[-1]
+        elif self.conf.targets == 'all':
+            if len(self.conf.labels) == 1:
+                self.output_shape = data[1].shape[1]
+            elif len(self.conf.labels) > 1:
+                self.output_shape = data[1].shape[1:]
 
-    def preprocess(self, verbose: bool = False):
-        verbose = True
+        self.output_type = tf.float32
+        self.classes = self.conf.labels
+
+    def get_class_weights(self, data):
+        _, Y, _ = data
+
+        if len(self.classes) > 1:
+            for i, label in enumerate(self.classes):
+                if self.conf.targets == 'one':
+                    pos_perc = np.sum(Y[..., i]) / Y.shape[0]
+                elif self.conf.targets == 'all':
+                    pos_perc = np.sum(Y[..., i]) / (Y.shape[0] * Y.shape[1])
+
+                pos_weight = 1 / pos_perc
+                neg_weight = 1 / (1 - pos_perc)
+
+                self.class_weights[label] = {0: neg_weight, 1: pos_weight}
+
+        elif len(self.classes) == 1:
+            if self.conf.targets == 'one':
+                pos_perc = np.sum(Y) / Y.shape[0]
+            if self.conf.targets == 'all':
+                pos_perc = np.sum(Y) / (Y.shape[0] * Y.shape[1])
+
+            pos_weight = 1 / pos_perc
+            neg_weight = 1 / (1 - pos_perc)
+
+            self.class_weights = {0: neg_weight, 1: pos_weight}
+
+    def preprocess(self, segmenting: bool = True):
+        verbose = False
+
         data = self.data.copy()
         data = data.drop(data.columns[0], axis=1)
-        data = data.rename(columns={'time': 'timestamp', 'subject': 'subject_id', 'activity': 'activity_id'})
-
-        drop_indices = data[(data['dataset'] == 'nonan')].index
-        data = data.drop(drop_indices)
+        data = data.rename(columns={'time': 'timestamp',
+                                    'subject': 'subject_id',
+                                    'activity': 'activity_id'})
 
         data = trim(data, length = self.conf.trim_length)
         if verbose:
-            plot_all(data)
+            plot_one(data)
 
         data = is_irregular(data, period=self.conf.length, checks=self.conf.checks)
-        # if verbose:
-        #     plot_all(data)
 
-        data = orient(data, 'gravity', dim='2d')
+        data = orient(data, self.conf.orient_method, dim='2d')
         if verbose:
-            plot_all(data)
-
-        data = orient(data, 'pca', dim='2d')
-        if verbose:
-            plot_all(data)
-
-        return
+            plot_one(data)
 
         data = remove_g(data, self.conf.fs, self.conf.include_g, self.conf.g_cutoff, how='lowpass')
         if verbose:
@@ -250,221 +249,153 @@ class builder:
         if verbose:
             plot_one(data)
 
-        data = get_parameters(data, self.conf.parameters, self.conf.calc_params)
+        data = get_parameters(data, self.conf.labels, self.conf.task)
         if verbose:
             plot_one(data)
 
-        spectrograms = None
-        train, test, train_sgs, test_sgs = split(data, self.conf.split_type, self.conf.test_hold_out, seed, spectrograms)
+        train, test, _, _ = split(data, self.conf.split_type, self.conf.test_hold_out, seed)
         if self.conf.validation:
-            train, val, train_sgs, val_sgs = split(train, self.conf.split_type, self.conf.val_hold_out, seed, train_sgs)
+            train, val, _, _ = split(train, self.conf.split_type, self.conf.val_hold_out, seed)
         else:
-            val, val_sgs = None, None
+            val = None
 
         if verbose:
             plot_one(train)
 
-        train, test, val, train_sgs, test_sgs, val_sgs = self.to_windows(train, test, val, train_sgs, test_sgs, val_sgs)
+        if segmenting:
+            train, test, val = self.to_windows(train, test, val)
 
-        return train, test, val, train_sgs, test_sgs, val_sgs
+        return train, test, val
 
-    def to_windows(self, train, test, val, train_sgs = None, test_sgs = None, val_sgs = None):
+    def to_windows(self, train, test, val):
         test_step = 'same'
         val_step = 'same'
-        lowest_step = 1 if train_sgs is None else self.conf.nstride
+        lowest_step = 1
 
-        train, sizes, self.channels = finalize(train, self.conf.length, self.conf.step, self.conf.task, get_events=False)
-        if train_sgs is not None:
-            train_sgs = fft.segment(train_sgs, sizes, self.conf.length, self.conf.step, self.conf.nstride)
+        train, _, self.channels = finalize(train, self.conf.length, self.conf.step,
+                                           self.conf.task, self.conf.targets, self.conf.target_position)
 
         which_set = val if self.conf.validation else test
-        which_sgs = val_sgs if self.conf.validation else test_sgs
         which_step = self.conf.step if val_step == 'same' else self.conf.step // 10 if val_step == 'low' else lowest_step
 
-        val, sizes, _ = finalize(which_set, self.conf.length, which_step, self.conf.task, get_events=False)
-        if which_sgs is not None:
-            val_sgs = fft.segment(which_sgs, sizes, self.conf.length, which_step, self.conf.nstride)
+        val, _, _ = finalize(which_set, self.conf.length, which_step,
+                             self.conf.task, self.conf.targets, self.conf.target_position)
 
         which_step = self.conf.step if test_step == 'same' else self.conf.step // 10 if test_step == 'low' else lowest_step
-        test, sizes, _ = finalize(test, self.conf.length, which_step, self.conf.task, get_events=False)
-        if test_sgs is not None:
-            test_sgs = fft.segment(test_sgs, sizes, self.conf.length, which_step, self.conf.nstride)
+        test, _, _ = finalize(test, self.conf.length, which_step,
+                              self.conf.task, self.conf.targets, self.conf.target_position)
 
-        print(train[0].shape, val[0].shape, test[0].shape)
+        return train, test, val
 
-        return train, test, val, train_sgs, test_sgs, val_sgs
+    def to_y(self, y):
+        if self.conf.targets == 'one':
+            y = tf.squeeze(y)
 
-    def nonan_extract(self, save: bool = False):
-        self.info = info('nonan')
-        subject_dir = sorted(os.listdir(self.info.path))
-        df = pd.DataFrame()
+        if self.conf.targets == 'all':
+            new_shape = (y.shape[0] * y.shape[1]) if len(self.conf.labels) == 1 else \
+                (y.shape[0] * y.shape[1], y.shape[2])
 
-        for sub_file in tqdm(subject_dir):
-            if 'nonan' in sub_file:
-                continue
+            y = tf.squeeze(y).reshape(new_shape)
 
-            sub_path = os.path.join(self.info.path, sub_file)
-            sub_df = self.nonan_load_subject(sub_path)
-            sub_df = sub_df.sort_values(by=['activity', 'time'])
+        return y
 
-            to_file = os.path.join(self.path, sub_file)
-            sub_df.to_csv(to_file)
+    def get_predictions(self, model: keras.Model, data, rotated: bool = False):
+        X, Y, T = data
+        Y_ = np.zeros(Y.shape)
+        if rotated:
+            X_rot = np.zeros(X.shape)
+        else:
+            X_rot = None
 
-            df = df._append(sub_df)
-            del sub_df
+        batch = None
+        offset = 0
 
-        df['dataset'] = 'nonan'
+        for i, x in enumerate(X):
+            if i % 300 == 0 and i > 0:
+                if rotated:
+                    X_rot[offset: i] = model.layers[0](batch)
 
-        if save:
-            df.to_csv(self.extract_path)
+                Y_[offset: i] = tf.squeeze(model.predict(batch))
+                offset = i
+                batch = None
 
-        return df
+            x = self.transformer(x)[np.newaxis, ...]
 
-    def nonan_load_subject(self, path):
-        df = pd.read_csv(path)
+            if batch is None:
+                batch = x
+            else:
+                batch = np.concatenate([batch, x], axis=0)
 
-        position = self.conf.position
-        if position == 'Wrist':
-            position = 'LH'
+        if batch is not None:
+            if rotated:
+                X_rot[offset:] = model.layers[0](batch)
 
-        pos_imu = df.columns[df.columns.str.contains(position)]
-        columns = df.columns.intersection([*self.info.indicators, *pos_imu, *self.info.phases, *self.info.events])
-        df = df[columns]
+            Y_[offset:] = tf.squeeze(model.predict(batch))
 
-        df = df.reset_index()
-        df['position'] = self.conf.position
-        df.columns = df.columns.str.replace('_' + self.conf.position, '')
+        if self.conf.targets == 'all':
+            if len(self.conf.labels) == 1:
+                Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1]))
+                Y_ = Y_[:, np.newaxis]
+            if len(self.conf.labels) > 1:
+                Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1], Y_.shape[2]))
 
-        df = df.rename(columns={"accX": "acc_x", "accY": "acc_y", "accZ": "acc_z"})
-        df = df.rename(columns={"gyrX": "gyr_x", "gyrY": "gyr_y", "gyrZ": "gyr_z"})
-        df['position'] = df['position'].map(self.info.pos_pairs)
+            t = T[:, 3:]
+            t = t.reshape((t.shape[0] * t.shape[1]))
 
-        for sensor in ['acc', 'gyr']:
-            features = df.columns[df.columns.str.contains(sensor)]
-            df.loc[(df[features] == 0).all(axis='columns'), features] = np.nan
+        elif self.conf.targets == 'one':
+            if len(self.conf.labels) == 1:
+                Y_ = Y_[:, np.newaxis]
 
-        if self.conf.fs is not None:
-            df = resample(df, self.info.initial_fs, self.conf.fs, how='decimate')
+            t = T[:, -1]
 
-        df = df.astype({'position': str, 'subject': int,
-                        'activity': int, 'time': float, 'is_NaN': bool,
-                        'LF_HS': int, 'RF_HS': int, 'LF_TO': int, 'RF_TO': int,
-                        'LF_stance': int, 'RF_stance': int,
-                        'acc_x': float, 'acc_y': float, 'acc_z': float,
-                        'gyr_x': float, 'gyr_y': float, 'gyr_z': float})
+        prob_labels = [label + '_prob' for label in self.conf.labels]
+        pred_labels = [label + '_pred' for label in self.conf.labels]
+        y_df = np.concatenate([Y_, t[:, np.newaxis]], axis=1)
+        y_df = pd.DataFrame(y_df, columns=[*prob_labels , 'timestamp'])
+        y_df[pred_labels] = np.round(y_df[prob_labels].values.astype(np.float32))
 
-        return df
+        return y_df, X, X_rot
 
-    def marea_extract(self, save: bool = True):
-        self.info = info('marea')
-        subject_dir = sorted(os.listdir(self.info.path))
-        ds = pd.DataFrame()
+    def compare_yy_(self, model: keras.Model, which: str, subject: int, activity: int,
+                    start: int = 0, end: int = -1, rotation: Optional[np.ndarray] = None,
+                    rotated: bool = False):
 
-        for sub_file in tqdm(subject_dir):
-            if 'marea_full' in sub_file:
-                continue
+        if which == 'test':
+            _, df, _ = self.preprocess(segmenting=False)
+        elif which == 'train':
+            df, _, _ = self.preprocess(segmenting=False)
 
-            sub_id = int(sub_file[4:-4])
-            sub_path = os.path.join(self.info.path, sub_file)
+        df = df.copy()
 
-            sub_df = self.marea_load_subject(sub_path)
+        df = df[df['subject_id'] == subject]
+        df = df[df['activity_id'] == activity]
+        df = df.iloc[start:end]
 
-            sub_df['subject'] = sub_id
-            ds = ds._append(sub_df)
+        if rotation is not None:
+            acc_features = df.columns[df.columns.str.contains("acc")]
 
-        ds = ds.rename(columns={"accX": "acc_x", "accY": "acc_y", "accZ": "acc_z"})
+            a = df[acc_features].values
+            a_rot = Rotation.from_matrix(rotation).apply(a)
+            df[acc_features] = a_rot
 
-        activities = self.conf.activities
-        fs = self.conf.fs
+        if self.conf.targets == 'one':
+            segs, _, _ = finalize(df, self.conf.length, 1, self.conf.task,
+                                  self.conf.targets, self.conf.target_position)
 
-        if activities is not None:
-            ds = ds[ds['activity'].str.contains('|'.join(activities))]
+        elif self.conf.targets == 'all':
+            segs, _, _ = finalize(df, self.conf.length, self.conf.length, self.conf.task,
+                                  self.conf.targets, self.conf.target_position)
 
-        ds['activity'] = ds['activity'].map(self.info.act_pairs)
-        ds['position'] = ds['position'].map(self.info.pos_pairs)
+        y_df, X, X_rot = self.get_predictions(model, segs, rotated)
 
-        if fs is not None:
-            ds = resample(ds, self.info.initial_fs, fs, how='resampy')
+        df = pd.merge(df, y_df, on='timestamp', how='left')
+        real_labels = {label: label + '_real' for label in self.conf.labels}
+        df = df.rename(columns=real_labels)
 
-        ds = ds.astype({'position': 'str', 'subject': int,
-                        'activity': int, 'time': float, 'is_NaN': bool,
-                        'LF_HS': int, 'RF_HS': int, 'LF_TO': int, 'RF_TO': int,
-                        'acc_x': float, 'acc_y': float, 'acc_z': float})
+        return df, X, X_rot
 
-        ds = ds.sort_values(by=['subject', 'activity', 'time'])
-        ds['dataset'] = 'marea'
 
-        if save:
-            ds.to_csv(self.extract_path)
 
-        return ds
-
-    def marea_load_subject(self, path):
-        df = pd.read_csv(path)
-
-        initial_activities = [
-            "treadmill_walk", "treadmill_walknrun", "treadmill_slope_walk",
-            "indoor_walk", "indoor_walknrun", "outdoor_walk", "outdoor_walknrun"
-        ]
-        events = self.info.events
-        position = self.conf.position
-        if position == 'LH':
-            position = 'Wrist'
-
-        acc_x = 'accX_' + position
-        acc_y = 'accY_' + position
-        acc_z = 'accZ_' + position
-        columns = [acc_x, acc_y, acc_z, *initial_activities, *events]
-
-        pos_df = df[df.columns.intersection(columns)].copy()
-        pos_df = self.convert_activity(pos_df)
-
-        pos_df = pos_df.reset_index()
-        pos_df['time'] = df.index * (1000. / 128.)
-        pos_df = pos_df.drop(['index'], axis=1)
-        pos_df.columns = pos_df.columns.str.replace('_' + position, '')
-        pos_df['position'] = position
-
-        return pos_df
-
-    def convert_activity(self, x):
-
-        def row_split(row, place):
-            if row[place + '_walknrun'] == 1 and row[place + '_walk'] == 0:
-                return 1
-            return 0
-
-        places = ['treadmill', 'indoor', 'outdoor']
-        for place in places:
-            if place + '_walknrun' in x.columns:
-                x[place + '_run'] = x.apply(lambda row: row_split(row, place), axis=1)
-
-        walknrun_cols = [col for col in x if col.endswith('walknrun')]
-        x = x.drop(walknrun_cols, axis=1)
-
-        activities = x[x.columns.intersection(self.info.activities)]
-        x['activity'] = activities.idxmax(axis=1)
-        x.loc[~activities.any(axis='columns'), 'activity'] = 'undefined'
-
-        x = x.drop(x.columns.intersection(self.info.activities), axis=1)
-
-        return x
-
-    def synthetic_extract(self):
-        nonan = self.nonan_extract(save=False)
-        marea = self.marea_extract(save=False)
-
-        nonan = nonan.rename(columns={'acc_x': 'acc_y', 'acc_y': 'acc_x'})
-        nonan['acc_z'] *= -1.
-
-        nonan['subject'] = nonan['subject'] + 100
-        nonan['activity'] = nonan['activity'] + 100
-        synthetic = pd.concat([marea, nonan], axis=0, ignore_index=True)
-        ordered_cols = ['dataset', 'position', 'subject', 'activity', 'time', 'is_NaN',
-                        'LF_HS', 'RF_HS', 'LF_TO', 'RF_TO', 'LF_stance', 'RF_stance',
-                        'acc_x', 'acc_y', 'acc_z', 'gyr_x', 'gyr_y', 'gyr_z']
-        synthetic = synthetic[ordered_cols]
-        synthetic.to_csv(self.extract_path)
 
 
 
