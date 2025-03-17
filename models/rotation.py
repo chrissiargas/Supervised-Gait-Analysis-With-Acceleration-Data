@@ -41,59 +41,7 @@ class feature_extractor(Layer):
 
         return features
 
-
-class quaternionLayer(Layer):
-    def __init__(self, input_shape):
-        super().__init__()
-        self.input_shape = input_shape
-        self.length = self.input_shape[0]
-        self.channels = self.input_shape[1]
-
-        self.localization_net = Sequential([
-            Conv1D(filters=32,
-                   kernel_size=3,
-                   strides=1,
-                   padding="same",
-                   activation="relu",
-                   kernel_initializer=initializers.HeNormal()),
-            MaxPooling1D(pool_size=2, strides=2),
-            Conv1D(filters=32,
-                   kernel_size=3,
-                   strides=1,
-                   padding="same",
-                   activation="relu",
-                   kernel_initializer=initializers.HeNormal()),
-            MaxPooling1D(pool_size=2, strides=2),
-            Conv1D(filters=32,
-                   kernel_size=3,
-                   strides=1,
-                   padding="same",
-                   activation="relu",
-                   kernel_initializer=initializers.HeNormal()),
-            MaxPooling1D(pool_size=2, strides=2)
-        ])
-
-        self.regression_net = Sequential([
-            Flatten(),
-            Dense(64, activation='relu'),
-            Dense(4)
-        ])
-
-    def call(self, inputs):
-        x = inputs
-        q = self.regression_net(x)
-
-        q = quaternion.normalize(q)
-        q = tf.repeat(q, repeats=self.length, axis=0)
-
-        x_to_rotate = tf.reshape(inputs, (-1, self.channels))
-        x_rot = quaternion.rotate(x_to_rotate, q)
-
-        return tf.reshape(x_rot, (-1, self.length, self.channels))
-
-
-
-class rotateByAxisLayer(Layer):
+class rotateByAxis(Layer):
     def __init__(self, input_shape, by: str = 'raw'):
         super().__init__()
         self.input_shape = input_shape
@@ -130,8 +78,9 @@ class rotateByAxisLayer(Layer):
                 Flatten(),
                 Dense(64, activation='relu', kernel_initializer=initializers.he_normal()),
                 Dense(32, activation='relu', kernel_initializer=initializers.he_normal()),
-                Dense(1, activation='sigmoid', kernel_initializer=initializers.glorot_normal())
+                Dense(1, activation='tanh', kernel_initializer=initializers.glorot_normal())
             ])
+
         if by == 'features':
             self.extract_features = feature_extractor()
 
@@ -139,32 +88,15 @@ class rotateByAxisLayer(Layer):
                 Flatten(),
                 Dense(64, activation='relu', kernel_initializer=initializers.he_normal()),
                 Dense(32, activation='relu', kernel_initializer=initializers.he_normal()),
-                Dense(1, activation='sigmoid', kernel_initializer=initializers.glorot_normal())
+                Dense(1, activation='tanh', kernel_initializer=initializers.glorot_normal())
             ])
 
 
     def call(self, inputs):
         x = inputs
         features = self.extract_features(x)
-        theta = self.regression_net(features)
-        theta = tf.math.multiply(theta, 2 * self.pi)
-
-        cos_theta = tf.math.cos(theta)
-        sin_theta = tf.math.sin(theta)
-        zero = tf.zeros_like(theta)
-        one = tf.ones_like(theta)
-
-        R = tf.stack([
-            tf.concat([cos_theta, zero, sin_theta], axis=-1),
-            tf.concat([zero, one, zero], axis=-1),
-            tf.concat([-sin_theta, zero, cos_theta], axis=-1)
-        ], axis=1)
-
-        x_rot = tf.einsum('bij,bkj->bki', R, inputs)
-
-        return x_rot
-
-
+        angle = self.regression_net(features)
+        return tf.math.multiply(angle, self.pi / 2.)
 
 
 

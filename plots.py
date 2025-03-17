@@ -4,13 +4,10 @@ import matplotlib.pyplot as plt
 from datetime import datetime
 import pandas as pd
 from typing import *
-
-import preprocessing.fft as fft
 import shutil
 
 second_plot = True
 print(f"Current working directory: {os.getcwd()}")
-
 
 def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                 subject: Optional[int] = None, activity: Optional[int] = None,

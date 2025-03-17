@@ -1,7 +1,5 @@
 from datetime import datetime
-
 import keras
-
 from config_parser import Parser
 import os
 import pandas as pd
@@ -9,15 +7,13 @@ import numpy as np
 from typing import Optional, Tuple, Dict
 import pickle
 import tensorflow as tf
-
 from preprocessing.info import info
 from preprocessing.resampling import resample
-from preprocessing.utils import (impute, remove_g, produce, smooth, rescale,
-                                 get_parameters, to_categorical, trim,separate, orient, is_irregular)
-from preprocessing.splitting import split
+from preprocessing.utils import (impute, remove_g, produce, smooth, get_parameters,
+                                 trim,separate, orient, is_irregular)
+from preprocessing.splitting import split, split_all
 from preprocessing.segments import finalize
-from preprocessing.transformations import transformer, specter, fourier
-import preprocessing.fft as fft
+from preprocessing.transformations import transformer
 import random
 from tqdm import tqdm
 from plots import *
@@ -34,9 +30,9 @@ length = 1000
 features = 'acc'
 mode = None
 population = None
+second_plot = True
 
 figpath = os.path.join('archive', 'figures')
-second_plot = True
 
 def plot_all(data):
     for sub in sorted(pd.unique(data['subject_id'])):
@@ -45,10 +41,7 @@ def plot_all(data):
                     show_events=second_plot, features=features)
 
 def plot_one(data):
-    for i, start in enumerate([0, 1000, 2000, 3000, 4000, 5000, 6000, 7000, 8000, 9000, 10000,
-                  11000, 12000, 13000, 14000, 15000, 16000, 17000, 18000, 19000, 20000,
-                  21000, 22000, 23000, 240000]):
-
+    for i, start in enumerate(range(0, 24000, 1000)):
         plot_signal(data, position, dataset, subject, activity, mode, population,
                     start, length,
                     show_events=second_plot, features=features, turn=i)
@@ -64,7 +57,6 @@ def set_shuffle(set, idx):
         shuffled_idx.extend(group_indices)
 
     return a[shuffled_idx], b[shuffled_idx], c[shuffled_idx]
-
 
 class builder:
     def __init__(self, generate: bool = False):
@@ -124,8 +116,8 @@ class builder:
             train = set_shuffle(train, train_idx)
 
         self.get_transformers()
-        self.get_shapes(train)
-        self.get_class_weights(train)
+        self.get_shapes(train[1])
+        self.get_class_weights(train[1])
 
         self.train_size = train[0].shape[0]
         self.test_size = test[0].shape[0]
@@ -141,9 +133,9 @@ class builder:
         X, Y, _ = S
 
         def gen():
-            for i, (x_, y_) in enumerate(zip(X, Y)):
-                x = self.transformer(x_, training)
-                y = tf.convert_to_tensor(y_, dtype=tf.float32)
+            for i, (x, y) in enumerate(zip(X, Y)):
+                x = self.transformer(x)
+                y = tf.convert_to_tensor(y, dtype=tf.float32)
                 y = tf.squeeze(y)
 
                 yield x, y
@@ -155,15 +147,18 @@ class builder:
         )
 
     def batch_prefetch(self, train, test, val):
-        train = (train.shuffle(1000).
+        train = (train.
+                 shuffle(10000).
                  repeat().
                  batch(batch_size=self.conf.batch_size).
                  prefetch(tf.data.AUTOTUNE))
 
-        test = (test.batch(batch_size=self.conf.batch_size).
+        test = (test.
+                batch(batch_size=self.conf.batch_size).
                 prefetch(tf.data.AUTOTUNE))
 
-        val = (val.batch(batch_size=self.conf.batch_size).
+        val = (val.
+               batch(batch_size=self.conf.batch_size).
                prefetch(tf.data.AUTOTUNE))
 
         return train, test, val
@@ -171,26 +166,24 @@ class builder:
     def get_transformers(self):
         self.transformer = transformer(self.channels)
 
-    def get_shapes(self, data):
+    def get_shapes(self, Y):
         self.input_shape = self.transformer.get_shape()
 
         if self.conf.targets == 'one':
             if len(self.conf.labels) == 1:
                 self.output_shape = ()
             if len(self.conf.labels) > 1:
-                self.output_shape = data[1].shape[-1]
+                self.output_shape = Y[1].shape[-1]
         elif self.conf.targets == 'all':
             if len(self.conf.labels) == 1:
-                self.output_shape = data[1].shape[1]
+                self.output_shape = Y[1].shape[1]
             elif len(self.conf.labels) > 1:
-                self.output_shape = data[1].shape[1:]
+                self.output_shape = Y[1].shape[1:]
 
         self.output_type = tf.float32
         self.classes = self.conf.labels
 
-    def get_class_weights(self, data):
-        _, Y, _ = data
-
+    def get_class_weights(self, Y):
         if len(self.classes) > 1:
             for i, label in enumerate(self.classes):
                 if self.conf.targets == 'one':
@@ -214,14 +207,17 @@ class builder:
 
             self.class_weights = {0: neg_weight, 1: pos_weight}
 
+    def initialize(self):
+        data = self.data.copy()
+        data = data.drop(data.columns[0], axis=1)
+        data = data.rename(columns={'time': 'timestamp', 'subject': 'subject_id', 'activity': 'activity_id'})
+
+        return data
+
     def preprocess(self, segmenting: bool = True):
         verbose = False
 
-        data = self.data.copy()
-        data = data.drop(data.columns[0], axis=1)
-        data = data.rename(columns={'time': 'timestamp',
-                                    'subject': 'subject_id',
-                                    'activity': 'activity_id'})
+        data = self.initialize()
 
         data = trim(data, length = self.conf.trim_length)
         if verbose:
@@ -229,7 +225,7 @@ class builder:
 
         data = is_irregular(data, period=self.conf.length, checks=self.conf.checks)
 
-        data = orient(data, self.conf.orient_method, dim='2d')
+        data = orient(data, self.conf.fs, self.conf.orient_method)
         if verbose:
             plot_one(data)
 
@@ -237,7 +233,7 @@ class builder:
         if verbose:
             plot_one(data)
 
-        data = smooth(data, self.conf.filter, self.conf.filter_window, self.conf.fs, self.conf.filter_cutoff)
+        data = smooth(data, self.conf.filter, self.conf.fs, self.conf.filter_cutoff)
         if verbose:
             plot_one(data)
 
@@ -245,20 +241,11 @@ class builder:
         if verbose:
             plot_one(data)
 
-        data = rescale(data, self.conf.rescaler)
-        if verbose:
-            plot_one(data)
-
         data = get_parameters(data, self.conf.labels, self.conf.task)
         if verbose:
             plot_one(data)
 
-        train, test, _, _ = split(data, self.conf.split_type, self.conf.test_hold_out, seed)
-        if self.conf.validation:
-            train, val, _, _ = split(train, self.conf.split_type, self.conf.val_hold_out, seed)
-        else:
-            val = None
-
+        train, test, val = split_all(data, self.conf.validation, self.conf.split_type, self.conf.test_hold_out, self.conf.val_hold_out, seed)
         if verbose:
             plot_one(train)
 
@@ -276,12 +263,18 @@ class builder:
                                            self.conf.task, self.conf.targets, self.conf.target_position)
 
         which_set = val if self.conf.validation else test
-        which_step = self.conf.step if val_step == 'same' else self.conf.step // 10 if val_step == 'low' else lowest_step
+        which_step = (self.conf.step if val_step == 'same' else
+                      self.conf.step // 10 if val_step == 'low'
+                      else lowest_step)
 
         val, _, _ = finalize(which_set, self.conf.length, which_step,
-                             self.conf.task, self.conf.targets, self.conf.target_position)
+                             self.conf.task, self.conf.targets,
+                             self.conf.target_position)
 
-        which_step = self.conf.step if test_step == 'same' else self.conf.step // 10 if test_step == 'low' else lowest_step
+        which_step = (self.conf.step if test_step == 'same'
+                      else self.conf.step // 10 if test_step == 'low'
+                      else lowest_step)
+
         test, _, _ = finalize(test, self.conf.length, which_step,
                               self.conf.task, self.conf.targets, self.conf.target_position)
 
@@ -315,7 +308,7 @@ class builder:
                 if rotated:
                     X_rot[offset: i] = model.layers[0](batch)
 
-                Y_[offset: i] = tf.squeeze(model.predict(batch))
+                Y_[offset: i] = tf.squeeze(model.predict(batch, verbose=0))
                 offset = i
                 batch = None
 
@@ -330,7 +323,7 @@ class builder:
             if rotated:
                 X_rot[offset:] = model.layers[0](batch)
 
-            Y_[offset:] = tf.squeeze(model.predict(batch))
+            Y_[offset:] = tf.squeeze(model.predict(batch, verbose=0))
 
         if self.conf.targets == 'all':
             if len(self.conf.labels) == 1:

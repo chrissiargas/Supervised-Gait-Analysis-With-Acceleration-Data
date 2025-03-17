@@ -90,6 +90,9 @@ def supervised(vis: bool = False):
     reset_tensorflow_keras_backend()
     sl_experiment(generate)
 
+    if vis:
+        visualize()
+
 
     # tasks_params = ['gait_events', 'gait_phases']
     # targets_params = ['one', 'all']

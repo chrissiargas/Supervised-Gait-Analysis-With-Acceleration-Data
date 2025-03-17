@@ -38,36 +38,57 @@ class single_head(Layer):
         y = self.head_net(inputs)
         return y
 
-def attach_double_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'full_model'):
-    input = encoder.input
-    encoding = encoder.output
-    outputs = []
+class multiple_head(Layer):
+    def __init__(self, n_units: int, hidden_units = [], bias: Optional[int] = None):
+        super().__init__()
+        self.n_units = n_units
 
-    for _ in range(n_units):
-        X = encoding
-        for i, hidden in enumerate(hidden_layers):
-            X = Dense(hidden)(X)
-            X = Activation('relu')(X)
+        layers = []
+        layers.append(Flatten())
+        for hidden_unit in hidden_units:
+            layers.append(Dense(hidden_unit, kernel_initializer=initializers.he_normal()))
+            layers.append(ReLU())
 
-        x = Dense(1)(X)
-        output = Activation(activation='sigmoid')(x)
-        outputs.append(output)
+        layers.append(Dense(1, activation='sigmoid',
+                            bias_initializer=bias,
+                            kernel_initializer=initializers.glorot_normal()))
+        layers.append(squeeze())
 
-    outputs = Concatenate()(outputs)
-    full_model = Model(input, outputs, name = name)
+        self.head_nets = [Sequential(layers) for _ in range(n_units)]
 
-    return full_model
+    def call(self, inputs):
+        y = []
 
-def attach_temporal_head(encoder: Model, n_units: int, hidden_layers = [], name: str = 'full_model', bias: Optional[int] = None) -> Model:
-    input = encoder.input
-    x = encoder.output
+        for unit in range(self.n_units):
+            single_y = self.head_nets[unit](inputs)
+            y.append(single_y)
 
-    for i, hidden in enumerate(hidden_layers):
-        x = TimeDistributed(Dense(hidden, activation='relu'))(x)
+        y = Concatenate()(y)
+        return y
 
-    outputs = TimeDistributed(Dense(n_units, activation='sigmoid', bias_initializer=bias))(x)
-    outputs = squeeze()(outputs)
+class temporal_head(Layer):
+    def __init__(self, n_units: int, hidden_units = [], bias: Optional[int] = None):
+        super().__init__()
+        self.n_units = n_units
 
-    full_model = Model(input, outputs, name = name)
+        layers = []
+        for hidden_unit in hidden_units:
+            layers.append(
+                TimeDistributed(
+                    Dense(hidden_unit, kernel_initializer=initializers.he_normal(), activation='relu')
+                )
+            )
 
-    return full_model
+        layers.append(
+            TimeDistributed(
+                Dense(n_units, activation='sigmoid', bias_initializer=bias),
+            )
+        )
+
+        layers.append(squeeze())
+
+        self.head_net = Sequential(layers)
+
+    def call(self, inputs):
+        y = self.head_net(inputs)
+        return y

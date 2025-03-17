@@ -12,24 +12,46 @@ from keras.metrics import binary_accuracy
 import sys
 import time
 from models.losses import get_yy_
+from keras.metrics import Metric
+from keras import backend as K
 
-def binary_accuracies(data, conf: Parser):
-    return [binary_accuracy_class(i, name, conf) for i, name in enumerate(data.classes)]
+def get_matches(y_true, y_pred):
+    return tf.reduce_sum(
+        tf.cast(tf.equal(y_true, y_pred),
+                tf.float32)
+    )
+def binary_accuracies(classes, conf: Parser):
+    return [binary_accuracy_class(i, name, conf) for i, name in enumerate(classes)]
 
+class binary_accuracy_class(Metric):
+    def __init__(self, class_index, class_name, conf, **kwargs):
+        super().__init__(name=f"accuracy_{class_name}", **kwargs)
+        self.class_index = class_index
+        self.conf = conf
 
-def binary_accuracy_class(class_index, class_name, conf: Parser):
-    def metric(y_true, y_pred):
-        y_true, y_pred = get_yy_(y_true, y_pred, conf)
+        self.accuracy = self.add_weight(name="acc", initializer="zeros")
+        self.total = self.add_weight(name="total", initializer="zeros")
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true, y_pred = get_yy_(y_true, y_pred, self.conf)
         y_true = tf.where(y_true > 0.5, 1, 0)
         y_pred = tf.where(y_pred > 0.5, 1, 0)
 
-        if len(conf.labels) == 1:
-            return binary_accuracy(y_true, y_pred)
-        elif len(conf.labels) > 2:
-            return binary_accuracy(y_true[:, class_index], y_pred[:, class_index])
+        if len(self.conf.labels) == 1:
+            n_matches = get_matches(y_true, y_pred)
+            self.accuracy.assign_add(n_matches)
+        elif len(self.conf.labels) > 2:
+            n_matches = get_matches(y_true[:, self.class_index], y_pred[:, self.class_index])
+            self.accuracy.assign_add(n_matches)
 
-    metric.__name__ = f"accuracy_{class_name}"
-    return metric
+        self.total.assign_add(tf.shape(y_true)[0])
+
+    def result(self):
+        return self.accuracy / self.total
+
+    def reset_state(self):
+        self.accuracy.assign(0.)
+        self.total.assign(0.)
 
 class Metrics(Callback):
     def __init__(self, set, steps, file_writer,

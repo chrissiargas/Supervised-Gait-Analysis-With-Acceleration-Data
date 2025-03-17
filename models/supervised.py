@@ -8,7 +8,6 @@ from tensorflow.python.ops.distributions.categorical import Categorical
 from tensorflow_graphics.geometry.transformation.rotation_matrix_3d import rotate
 
 from models.architectures import CNNGRU_encoder
-from models.head import single_head
 from preprocessing.building import builder
 from config_parser import Parser
 from models.metrics import binary_accuracies, Metrics
@@ -25,10 +24,32 @@ import keras.backend as K
 import shutil
 import numpy as np
 from typing import Optional, Dict
-from models.losses import get_weighted_BCE, get_BCE, get_dice_loss
-from models.rotation import quaternionLayer, rotateByAxisLayer
+from models.losses import get_weighted_BCE, get_BCE
+from models.head import single_head, multiple_head, temporal_head
+from models.rotation import rotateByAxis
 from plots import plot_signal
 
+def make_files(config):
+    log_dir = os.path.join('logs', config.architecture + '_TB')
+    if not os.path.isdir(log_dir):
+        os.makedirs(log_dir)
+    try:
+        shutil.rmtree(log_dir)
+    except OSError as e:
+        print("Error: %s - %s." % (e.filename, e.strerror))
+
+    model_dir = os.path.join('archive', 'models', config.architecture)
+    model_file = '%s.weights.h5' % config.architecture
+    model_file = os.path.join(model_dir, model_file)
+
+    if not os.path.isdir(model_dir):
+        os.makedirs(model_dir)
+    try:
+        os.remove(model_file)
+    except OSError as e:
+        print("Error: %s - %s." % (e.filename, e.strerror))
+
+    return log_dir, model_file
 
 class predictor(Model):
     def __init__(self, data: builder, *args, **kwargs):
@@ -42,10 +63,10 @@ class predictor(Model):
 
         if config.rotation_layer is None:
             self.rotation_layer = None
-        elif config.rotation_layer == 'quaternion':
-            self.rotation_layer = quaternionLayer(data.input_shape)
         elif config.rotation_layer == 'rotate_by_axis':
-            self.rotation_layer = rotateByAxisLayer(data.input_shape)
+            self.rotation_layer = rotateByAxis(data.input_shape)
+        else:
+            self.rotation_layer = None
 
         units = 64
         if config.architecture == 'cnn-gru':
@@ -55,14 +76,18 @@ class predictor(Model):
 
         if config.head == 'single':
             self.head_layer = single_head(len(config.labels), [units // 2])
+        elif config.head == 'multi':
+            self.head_layer = multiple_head(len(config.labels), [units // 2])
+        elif config.head == 'temporal':
+            self.head_layer = temporal_head(len(config.labels), [units // 2])
         else:
             self.head_layer = None
 
-        self.data = data
+        self.classes = data.classes
         self.optimizer = Optimizer(learning_rate=config.learning_rate)
-        self.loss_function = Loss()
-        self.binary_accuracy = None
+        self.target_loss = Loss()
         self.BCE_loss_tracker = None
+        self.accuracy_trackers = None
 
     def compile(self, *args, **kwargs):
         super().compile(*args, **kwargs)
@@ -72,58 +97,83 @@ class predictor(Model):
 
         if self.conf.task == 'gait_phases' or self.conf.task == 'gait_events':
             if self.class_weights is None:
-                self.loss_function = get_BCE(self.conf)
+                self.target_loss = get_BCE(self.conf)
             else:
-                self.loss_function = get_weighted_BCE(self.class_weights, self.conf)
+                self.target_loss = get_weighted_BCE(self.class_weights, self.conf)
 
         elif self.conf.task == 'gait_parameters':
-            self.loss_function = keras.losses.MeanSquaredError()
+            self.target_loss = keras.losses.MeanSquaredError()
 
         self.BCE_loss_tracker = keras.metrics.Mean(name='loss')
-        self.binary_accuracy = binary_accuracies(self.data, self.conf)
+        self.accuracy_trackers = binary_accuracies(self.classes, self.conf)
 
     def build_model(self, inputs_shape):
         self.build(inputs_shape)
         _ = self(tf.keras.Input(shape=inputs_shape))
 
+    def rotate(self, x, angle):
+        if self.conf.rotation_layer == 'rotate_by_axis':
+            cos_theta = tf.math.cos(angle)
+            sin_theta = tf.math.sin(angle)
+            zero = tf.zeros_like(angle)
+            one = tf.ones_like(angle)
+
+            R = tf.stack([
+                tf.concat([cos_theta, zero, sin_theta], axis=-1),
+                tf.concat([zero, one, zero], axis=-1),
+                tf.concat([-sin_theta, zero, cos_theta], axis=-1)
+            ], axis=1)
+
+            x_rotated = tf.einsum('bij,bkj->bki', R, x)
+
+            return x_rotated, R
+
     @property
     def metrics(self):
         return [
-            self.BCE_loss_tracker
+            self.BCE_loss_tracker,
+            *self.accuracy_trackers
         ]
 
     @tf.function
     def call(self, inputs, training=None):
-        x = inputs
+        x_ = inputs
         if self.rotation_layer:
-            x = self.rotation_layer(x)
+            angle = self.rotation_layer(x_)
+            x_, _ = self.rotate(x_, angle)
         if self.encoder_layer:
-            x = self.encoder_layer(x)
+            x_ = self.encoder_layer(x_)
         if self.head_layer:
-            x = self.head_layer(x)
-        outputs = x
+            x_ = self.head_layer(x_)
+        y_ = x_
 
-        return outputs
+        return y_
 
     @tf.function
     def train_step(self, data):
         x, y = data
         with tf.GradientTape() as tape:
             x_ = x
+
             if self.rotation_layer:
-                x_ = self.rotation_layer(x_)
+                angle = self.rotation_layer(x_)
+                x_, R = self.rotate(x_, angle)
             if self.encoder_layer:
                 x_ = self.encoder_layer(x_)
             if self.head_layer:
                 x_ = self.head_layer(x_)
+
             y_ = x_
 
-            loss = self.loss_function(y, y_)
+            total_loss = self.target_loss(y, y_)
 
-        gradients = tape.gradient(loss, self.trainable_variables)
+        gradients = tape.gradient(total_loss, self.trainable_variables)
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
-        self.BCE_loss_tracker.update_state(loss)
+        self.BCE_loss_tracker.update_state(total_loss)
+        for accuracy_tracker in self.accuracy_trackers:
+            accuracy_tracker.update_state(y, y_)
+
         return {m.name: m.result() for m in self.metrics}
 
     @tf.function
@@ -132,15 +182,19 @@ class predictor(Model):
 
         x_ = x
         if self.rotation_layer:
-            x_ = self.rotation_layer(x_)
+            angle = self.rotation_layer(x_)
+            x_, _ = self.rotate(x_, angle)
         if self.encoder_layer:
             x_ = self.encoder_layer(x_)
         if self.head_layer:
             x_ = self.head_layer(x_)
         y_ = x_
 
-        loss = self.loss_function(y, y_)
+        loss = self.target_loss(y, y_)
+
         self.BCE_loss_tracker.update_state(loss)
+        for accuracy_tracker in self.accuracy_trackers:
+            accuracy_tracker.update_state(y, y_)
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -160,24 +214,7 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     test_steps = data.test_size // config.batch_size
     val_steps = data.val_size // config.batch_size
 
-    log_dir = os.path.join('logs', config.architecture + '_TB')
-    if not os.path.isdir(log_dir):
-        os.makedirs(log_dir)
-    try:
-        shutil.rmtree(log_dir)
-    except OSError as e:
-        print("Error: %s - %s." % (e.filename, e.strerror))
-
-    model_dir = os.path.join('archive', 'models', config.architecture)
-    model_file = '%s.weights.h5' % config.architecture
-    model_file = os.path.join(model_dir, model_file)
-
-    if not os.path.isdir(model_dir):
-        os.makedirs(model_dir)
-    try:
-        os.remove(model_file)
-    except OSError as e:
-        print("Error: %s - %s." % (e.filename, e.strerror))
+    log_dir, model_file = make_files(config)
 
     tensorboard = TensorBoard(log_dir, histogram_freq=1)
 
@@ -222,21 +259,6 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
     scores = ['accuracy','f1_score', 'precision', 'recall']
     test_metrics = Metrics(test, test_steps, log_dir, on='test_end', scores=scores, verbose=0)
     model.evaluate(test, steps=test_steps, callbacks=[test_metrics], verbose=0)
-
-    set = 'test'
-    subject = 3
-    activity = 3
-
-    df, _, _ = data.compare_yy_(model, which=set, subject=subject, activity=activity)
-
-    show_events = True if config.task == 'gait_events' else False
-    show_phases = True if config.task == 'gait_phases' else False
-
-    for i, start in enumerate(range(0, df.shape[0], 1000)):
-        plot_signal(df, 'left_lower_arm', subject=subject,
-                    activity=activity, start=start, length=1000,
-                    show_events=show_events, features='acc', turn=i,
-                    show_phases=show_phases, raw=True, figpath=None)
 
 
 

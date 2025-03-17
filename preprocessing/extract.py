@@ -36,41 +36,6 @@ def inv_calibrate(x: pd.DataFrame, type: str) -> pd.DataFrame:
 
     return x
 
-def calibrate(x: pd.DataFrame, type: str) -> pd.DataFrame:
-    acc_features = x.columns[x.columns.str.contains("acc")]
-
-    a_raw = x[acc_features].values
-    g_world = np.array([g, 0, 0])
-
-    plt.plot(a_raw[:100])
-    plt.show()
-
-    if type == 'quat':
-        quat_features = ['q1', 'qi', 'qj', 'qk']
-        q = x[quat_features].values
-        rotation = R.from_quat(q[:, [1, 2, 3, 0]])
-
-    elif type == 'euler':
-        rot_features = ['course', 'pitch', 'roll']
-        rot = x[rot_features].values
-        rotation = R.from_euler('xzy', rot, degrees=True)
-
-    a_free = (rotation.as_matrix() @ a_raw[..., np.newaxis]).squeeze() - g_world
-    x[acc_features] = a_free
-
-    return x
-
-def rot_to_quat(x: pd.DataFrame) -> pd.DataFrame:
-    rot_features = ['course', 'pitch', 'roll']
-    rot = x[rot_features].values
-    rotation = R.from_euler('xzy', rot, degrees=True)
-    quats = rotation.as_quat()
-
-    x.drop(columns=['course', 'pitch', 'roll'], inplace=True)
-    x[['quat_1', 'quat_i', 'quat_j', 'quat_k']] = quats[:, [3,0,1,2]]
-
-    return x
-
 def add_phase(timeseries: pd.DataFrame, event1: str, event2: str) -> np.ndarray:
     event1_indices = np.where(timeseries[event1] == 1)[0]
     event2_indices = np.where(timeseries[event2] == 1)[0]
@@ -249,7 +214,6 @@ class extractor:
         df.columns = df.columns.str.replace('_' + self.conf.position, '')
 
         df = df.rename(columns=self.info.imu_features)
-        df = calibrate(df, type='euler')
 
         df['position'] = df['position'].map(self.info.pos_pairs)
 

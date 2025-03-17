@@ -4,12 +4,11 @@ import numpy as np
 from typing import Optional, List, Tuple, Dict
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
 from preprocessing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_norm_yz,
-                                    add_jerk, add_low, add_angle_grav,
-                                    add_angle_y_xz, add_angle_z_xy, add_angle_y_x, add_angle_x_yz)
-from preprocessing.filters import (butter_lowpass_filter, median_smoothing, lowpass_smoothing,
-                                   butter_lowpass_filter2, butter_highpass_filter, time_lowpass_filter)
-from preprocessing.gait_parameters import add_parameter, smooth_events
-from preprocessing.rotate import rotate_by_gravity, rotate_by_energy2, rotate_by_energy3, rotate_by_pca
+                                    add_jerk, add_angle_y_xz, add_angle_z_xy, add_angle_y_x,
+                                    add_angle_x_yz)
+from preprocessing.filters import (butter_lowpass_filter, lowpass_smoothing, butter_highpass_filter)
+from preprocessing.gait_parameters import smooth_events
+from preprocessing.rotate import rotate_by_gravity, rotate_by_pca
 import matplotlib.pyplot as plt
 import os
 from preprocessing.irregularities import *
@@ -45,13 +44,8 @@ def impute(x: pd.DataFrame, how: str) -> pd.DataFrame:
 
     return x
 
-def trim(x: pd.DataFrame, length: int = 0, div: int = 0) -> pd.DataFrame:
+def trim(x: pd.DataFrame, length: int = 0) -> pd.DataFrame:
     x = x.copy()
-
-    if div != 0:
-        groups = x.groupby(['dataset', 'subject_id', 'activity_id'], group_keys=False)
-        x = groups.apply(lambda g: g.iloc[: len(g) - (len(g) % div)])
-        return x
 
     if length != 0:
         groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
@@ -85,41 +79,27 @@ def is_irregular(x: pd.DataFrame, period: int, checks: List[str]) -> pd.DataFram
     for ds, ds_df in x.groupby('dataset'):
         for sub, sub_df in ds_df.groupby('subject_id'):
             for act, act_df in sub_df.groupby('activity_id'):
-                flags = []
-                for check in checks:
-                    flag = []
-                    if check == 'artifacts':
-                        flag = check_artifacts(act_df)
-                    if check == 'stationary':
-                        flag = check_stationary(act_df)
-                    elif check == 'rotation':
-                        flag = check_rotation(act_df)
-                    flags.append(set(flag))
+                Flags = []
 
-                all_flags = set.union(*flags)
+                for check in checks:
+                    flags = []
+                    if check == 'rotation':
+                        flags = check_rotation(act_df)
+
+                    Flags.append(set(flags))
+
+                all_flags = set.union(*Flags)
                 x.loc[(x.dataset == ds) &
                        (x.subject_id == sub) &
                        (x.activity_id == act) &
-                       (x.period_id.isin(all_flags)),
-                        'irregular'] = 1
-
-                features = act_df.columns[act_df.columns.str.contains('acc|norm')]
-                name = (str(ds) + '-' + str(sub) + '-' + str(act) + '-')
-                for f, flag in enumerate(all_flags):
-                    window = act_df[act_df.period_id == flag]
-                    window = window[features]
-
-                    fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
-                    axs.plot(window, linewidth=1, label=features)
-                    plt.legend()
-                    filepath = os.path.join(figpath, name + str(f) + ".png")
-                    plt.savefig(filepath, format="png", bbox_inches="tight")
-                    plt.close()
+                       (x.period_id.isin(all_flags)), 'irregular'] = 1
 
     return x
 
 
-def orient(x: pd.DataFrame, how: Optional[str] = None, dim: str = '3d') -> pd.DataFrame:
+def orient(x: pd.DataFrame,
+           fs: float,
+           how: Optional[str] = None) -> pd.DataFrame:
     if how is None:
         return x
 
@@ -134,19 +114,11 @@ def orient(x: pd.DataFrame, how: Optional[str] = None, dim: str = '3d') -> pd.Da
     groups = x.groupby(['dataset', 'subject_id', 'activity_id', 'rotation_period'])
 
     if 'gravity' in how:
-        rotated = groups.apply(lambda gr: rotate_by_gravity(gr.name, gr))
+        rotated = groups.apply(lambda gr: rotate_by_gravity(gr, fs))
         x[features] = np.concatenate(rotated.values)
 
     if 'pca' in how:
         rotated = groups.apply(lambda gr: rotate_by_pca(gr))
-        x[features] = np.concatenate(rotated.values)
-
-    if 'energy' in how:
-        if dim == '2d':
-            rotated = groups.apply(lambda gr: rotate_by_energy2(gr))
-        if dim == '3d':
-            rotated = groups.apply(lambda gr: rotate_by_energy3(gr))
-
         x[features] = np.concatenate(rotated.values)
 
     x = x.drop(columns=['rotation_period'])
@@ -165,8 +137,6 @@ def remove_g(x: pd.DataFrame, fs: int, include_g:bool, g_cutoff: float, how: str
         if how == 'lowpass':
             grav = groups[acc_feat].transform(lambda g: butter_lowpass_filter(g, g_cutoff, fs / 2))
             x[acc_feat] = x[acc_feat] - grav
-        elif how == 'highpass':
-            x[acc_feat] = groups[acc_feat].transform(lambda g: butter_highpass_filter(g, g_cutoff, fs / 2))
 
     return x
 
@@ -191,21 +161,6 @@ def produce(x: pd.DataFrame, features: List[str], fs: int) -> pd.DataFrame:
     if 'jerk' in features:
         x = add_jerk(x)
 
-    if 'low_x' in features:
-        x = add_low(x, fs, 'x')
-
-    if 'low_y' in features:
-        x = add_low(x, fs, 'y')
-
-    if 'low_z' in features:
-        x = add_low(x, fs, 'z')
-
-    if 'low_xyz' in features:
-        x = add_low(x, fs, direction='xyz')
-
-    if 'low_yz' in features:
-        x = add_low(x, fs, direction='yz')
-
     if 'y_x_angle' in features:
         x = add_angle_y_x(x)
 
@@ -218,39 +173,16 @@ def produce(x: pd.DataFrame, features: List[str], fs: int) -> pd.DataFrame:
     if 'x_yz_angle' in features:
         x = add_angle_x_yz(x)
 
-    if 'g_angle' in features:
-        x = add_angle_grav(x, fs, g_cutoff=0.5)
-
     return x
 
-def smooth(x, filter_type, w=0, fs=0, cutoff=0):
+def smooth(x, filter_type, fs=0, cutoff=0):
     if filter_type is None:
         return x
 
     x = x.copy()
 
-    if filter_type == 'median':
-        x = median_smoothing(x, w)
-
     if filter_type == 'lowpass':
         x = lowpass_smoothing(x, fs, cutoff)
-
-    return x
-
-def rescale(x: pd.DataFrame, how: str = 'standard') -> pd.DataFrame:
-    if how is None:
-        return x
-
-    x = x.copy()
-
-    features = x.columns[x.columns.str.contains("acc|norm|jerk|low|angle|gyr")]
-
-    if how == 'min-max':
-        rescaler = MinMaxScaler()
-    elif how == 'standard':
-        rescaler = StandardScaler()
-
-    x[features] = rescaler.fit_transform(x[features].values)
 
     return x
 
@@ -261,7 +193,7 @@ def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFram
         return x
 
     if task == 'gait_phases':
-        pm_cols = x.columns[x.columns.str.contains('stance')]
+        pm_cols = x.columns[x.columns.str.contains('stance|swing')]
 
         cols_to_drop = list(set(pm_cols) - set(labels))
         x = x.drop(cols_to_drop, axis=1)
@@ -271,6 +203,7 @@ def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFram
 
     if task == 'gait_events':
         all_events = x.columns[x.columns.str.contains('HS|TO')]
+
         for in_event in labels:
             x[in_event + '_raw'] = x[in_event]
             x[in_event] = smooth_events(x, in_event, 'binary')
@@ -278,47 +211,8 @@ def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFram
         cols_to_drop = list(set(all_events) - set(labels))
         x = x.drop(cols_to_drop, axis=1)
 
-        cols_to_drop = x.columns[x.columns.str.contains('stance')]
+        cols_to_drop = x.columns[x.columns.str.contains('stance|swing')]
         x = x.drop(cols_to_drop, axis=1)
-
-    if task == 'gait_parameters':
-        if 'LF_stance' in labels:
-            x = add_parameter(x, 'LF_HS', 'LF_TO', 'LF_stance_time')
-
-        if 'RF_stance' in labels:
-            x = add_parameter(x, 'RF_HS', 'RF_TO', 'RF_stance_time')
-
-        if 'LF_swing' in labels:
-            x = add_parameter(x, 'LF_TO', 'LF_HS', 'LF_swing_time')
-
-        if 'RF_swing' in labels:
-            x = add_parameter(x, 'RF_TO', 'RF_HS', 'RF_swing_time')
-
-        if 'step' in labels:
-            x = add_parameter(x, 'RF_HS', 'RF_HS', 'step_time')
-
-        if 'LF_double_support' in labels:
-            x = add_parameter(x, 'RF_HS', 'LF_TO', 'LF_double_support_time')
-
-        if 'RF_double_support' in labels:
-            x = add_parameter(x, 'LF_HS', 'RF_TO', 'RF_double_support_time')
-
-        cols_to_drop = x.columns[x.columns.str.contains('HS|TO')]
-        x = x.drop(cols_to_drop, axis=1)
-
-        cols_to_drop = x.columns[x.columns.str.contains('stance')]
-        x = x.drop(cols_to_drop, axis=1)
-
-    return x
-
-def to_categorical(x: pd.DataFrame, drop: bool = False) -> pd.DataFrame:
-    x = x.copy()
-
-    x['subject_id'] = x['subject'].astype(int)
-    x['activity_id'] = x['activity'].astype(int)
-
-    if drop:
-        x = x.drop(['subject', 'activity'], axis=1)
 
     return x
 

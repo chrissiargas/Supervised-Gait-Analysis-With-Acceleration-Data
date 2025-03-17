@@ -9,7 +9,10 @@ from typing import Optional
 import numpy as np
 from datetime import datetime
 
-def visualize(path: Optional[str] = None):
+def visualize(path: Optional[str] = None,
+              set: str = 'test',
+              subject: Optional[int] = None,
+              activity: int = 3):
     data = builder()
     data()
 
@@ -22,12 +25,11 @@ def visualize(path: Optional[str] = None):
 
     model = predictor(data)
     model.compile()
-    model.build(data.input_shape)
+    model.build_model(data.input_shape)
     model.load_weights(model_file)
 
-    set = 'test'
-    subject = 3
-    activity = 3
+    if subject is None:
+        subject = config.test_hold_out[0]
 
     df, _, _ = data.compare_yy_(model, which=set, subject=subject, activity=activity)
 
@@ -65,7 +67,11 @@ def rotation_by_axis(angle_deg, axis='z'):
 
     return R
 
-def visualize_rot(path: Optional[str] = None):
+def visualize_rot(path: Optional[str] = None,
+                  set: str = 'test',
+                  subject: Optional[int] = None,
+                  activity: int = 3):
+
     data = builder()
     data()
 
@@ -81,9 +87,8 @@ def visualize_rot(path: Optional[str] = None):
     model.build_model(data.input_shape)
     model.load_weights(model_file)
 
-    set = 'test'
-    subject = 3
-    activity = 3
+    if subject is None:
+        subject = config.test_hold_out[0]
 
     start = 4000
     window = 1000
@@ -116,5 +121,5 @@ def visualize_rot(path: Optional[str] = None):
             plt.close()
 
 if __name__ == '__main__':
-    visualize_rot()
+    visualize_rot(set='test', subject=3, activity=3)
 

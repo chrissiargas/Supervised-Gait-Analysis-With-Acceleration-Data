@@ -9,16 +9,14 @@ data_args:
 main_args:
   load_data: false
 
-  cleaner: linear
+  trim_duration: 5
   checks:
   orient_method:
   include_gravity: true
   gravity_cutoff: 0.1
   new_features:
   filter:
-  filter_window: 3
   filter_cutoff: 10.0
-  rescaler:
 
   labels:
   - LF_HS
@@ -26,26 +24,19 @@ main_args:
   targets: one
   target_position: center
 
-  trim_duration: 5
-  fft: false
-  spectrogram: false
-  stft_duration: 1.6
-  stft_step: 0.1
-
-  split_type: loso    #loso, start, end
+  split_type: loso
   test_hold_out:
   - 3
   validation: false
   val_hold_out: 1
 
-  duration: 4 # seconds
-  stride: 1   # seconds
+  duration: 4
+  stride: 1
 
-  features: # List(norm_xyz, norm_xy, norm_yz, norm_xz, jerk, low_x, low_y, low_z)
+  features:
   - acc_x
   - acc_y
   - acc_z
-  augmentations: # List(rotate, jitter, scale)
   batch_size: 128
 
   architecture: cnn-gru
