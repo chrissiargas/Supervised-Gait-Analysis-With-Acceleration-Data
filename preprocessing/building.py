@@ -21,11 +21,11 @@ from preprocessing.extract import extractor
 from scipy.spatial.transform import Rotation
 
 seed = 45
-position = 'left_lower_leg'
+position = 'left_lower_arm'
 dataset = None
-subject = 1001
+subject = 1
 activity = 1
-start = 0
+start = 11500
 length = 1000
 features = 'acc'
 mode = None
@@ -37,8 +37,7 @@ figpath = os.path.join('archive', 'figures')
 def plot_all(data):
     for sub in sorted(pd.unique(data['subject_id'])):
         plot_signal(data, position, dataset, sub, activity, mode, population,
-                    start, length,
-                    show_events=second_plot, features=features)
+                    start, length, show_events=second_plot, features=features)
 
 def plot_one(data):
     for i, start in enumerate(range(0, 24000, 1000)):
@@ -219,6 +218,8 @@ class builder:
 
         data = self.initialize()
 
+        data = data[data['subject_id'].isin([107, 1001, 1002, 1003, 1004, 1005, 1007, 1008, 1010, 1012])]
+
         data = trim(data, length = self.conf.trim_length)
         if verbose:
             plot_one(data)
@@ -259,8 +260,9 @@ class builder:
         val_step = 'same'
         lowest_step = 1
 
-        train, _, self.channels = finalize(train, self.conf.length, self.conf.step,
-                                           self.conf.task, self.conf.targets, self.conf.target_position)
+        train, _, self.channels = finalize(train, self.conf.length,
+                                           self.conf.step, self.conf.task,
+                                           self.conf.targets, self.conf.target_position)
 
         which_set = val if self.conf.validation else test
         which_step = (self.conf.step if val_step == 'same' else
@@ -275,8 +277,9 @@ class builder:
                       else self.conf.step // 10 if test_step == 'low'
                       else lowest_step)
 
-        test, _, _ = finalize(test, self.conf.length, which_step,
-                              self.conf.task, self.conf.targets, self.conf.target_position)
+        test, _, _ = finalize(test, self.conf.length,
+                              which_step, self.conf.task,
+                              self.conf.targets, self.conf.target_position)
 
         return train, test, val
 

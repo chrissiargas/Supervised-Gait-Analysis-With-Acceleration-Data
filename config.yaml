@@ -4,7 +4,7 @@ data_args:
   activities:
   - walk
   position: LH
-  dataset: marea
+  dataset: MMgait-nonan
 
 main_args:
   load_data: false
@@ -26,10 +26,11 @@ main_args:
 
   split_type: loso
   test_hold_out:
-  - 3
+  - 107
   validation: false
-  val_hold_out: 1
+  val_hold_out:
 
+  - 3
   duration: 4
   stride: 1
 
@@ -40,7 +41,7 @@ main_args:
   batch_size: 128
 
   architecture: cnn-gru
-  rotation_layer: rotate_by_axis
+  rotation_layer:
   optimizer: adam
   epochs: 250
   learning_rate: 0.0001

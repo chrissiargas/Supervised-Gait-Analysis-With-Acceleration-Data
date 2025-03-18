@@ -2,7 +2,7 @@ import matplotlib.pyplot as plt
 
 from config_parser import Parser
 import os
-from models.supervised import predictor
+from models.supervised import alligaitor
 from preprocessing.building import builder
 from plots import plot_signal
 from typing import Optional
@@ -23,7 +23,7 @@ def visualize(path: Optional[str] = None,
     model_file = '%s.weights.h5' % config.architecture
     model_file = f'{model_dir}/{model_file}'
 
-    model = predictor(data)
+    model = alligaitor(data)
     model.compile()
     model.build_model(data.input_shape)
     model.load_weights(model_file)
@@ -82,7 +82,7 @@ def visualize_rot(path: Optional[str] = None,
     model_file = '%s.weights.h5' % config.architecture
     model_file = f'{model_dir}/{model_file}'
 
-    model = predictor(data)
+    model = alligaitor(data)
     model.compile()
     model.build_model(data.input_shape)
     model.load_weights(model_file)
@@ -121,5 +121,5 @@ def visualize_rot(path: Optional[str] = None,
             plt.close()
 
 if __name__ == '__main__':
-    visualize_rot(set='test', subject=3, activity=3)
+    visualize(set='test', subject=9, activity=1)
 

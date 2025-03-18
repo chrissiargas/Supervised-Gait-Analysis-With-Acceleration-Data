@@ -51,7 +51,7 @@ def make_files(config):
 
     return log_dir, model_file
 
-class predictor(Model):
+class alligaitor(Model):
     def __init__(self, data: builder, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
@@ -60,6 +60,7 @@ class predictor(Model):
         self.conf = config
 
         self.class_weights = data.class_weights if config.class_weights else None
+        print(self.class_weights)
 
         if config.rotation_layer is None:
             self.rotation_layer = None
@@ -205,7 +206,7 @@ def train_evaluate(data: builder, summary: bool = False, verbose: bool = False):
 
     train, test, val = data()
 
-    model = predictor(data)
+    model = alligaitor(data)
     model.compile()
     model.build_model(data.input_shape)
     model.summary()

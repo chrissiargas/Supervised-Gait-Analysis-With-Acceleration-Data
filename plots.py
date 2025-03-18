@@ -84,6 +84,12 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                     axs.plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
                     continue
 
+                else:
+                    ev_ixs = np.where(ev == 1)
+                    axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
+                               linewidth=1, linestyle='solid', label=name)
+
+
         elif show_phases:
             for phase, name in zip(phases.transpose(), phases_cols):
                 if 'prob' in name:

@@ -106,7 +106,7 @@ class extractor:
             self.sub_offset += 1000
         if 'nonan' in self.dataset:
             self.info = info('nonan')
-            self.nonan_extract(population='older')
+            self.nonan_extract('older')
             self.sub_offset += 1000
         if 'MMgait' in self.dataset:
             self.info = info('MMgait')
@@ -163,6 +163,9 @@ class extractor:
         df = df.astype(self.info.columns)
 
         df['subject'] += self.sub_offset
+
+        df['acc_x'] *= -1.
+        df['acc_y'] *= -1.
 
         return df
 
