@@ -5,16 +5,7 @@ import numpy as np
 import pandas as pd
 from preprocessing.filters import butter_lowpass_filter
 from preprocessing.irregularities import get_gravity
-
-
-def to_rotation_matrix(angle: float) -> np.ndarray:
-    rot = np.eye(3)
-    rot[0,0] = np.cos(angle)
-    rot[0,2] = np.sin(angle)
-    rot[2,0] = -np.sin(angle)
-    rot[2,2] = np.cos(angle)
-
-    return rot
+from rotation_utils import rotation_by_axis
 
 def get_grav_comps(x: pd.DataFrame, fs: float) -> np.ndarray:
     x = x.values
@@ -23,14 +14,22 @@ def get_grav_comps(x: pd.DataFrame, fs: float) -> np.ndarray:
         axis=0, arr=x)
     return g
 
-def rotate_by_gravity(x: pd.DataFrame, fs: float) -> np.ndarray:
+def rotate_by_gravity(x: pd.DataFrame, fs: float, grav_axis: str = 'x') -> np.ndarray:
     features = x.columns[x.columns.str.contains('acc')]
     g_comps = get_grav_comps(x[features], fs)
-    reg_g_comps = g_comps[~x.irregular.astype(bool)]
+    g_comps = g_comps[~x.irregular.astype(bool)]
 
-    g = np.mean(reg_g_comps, axis=0)
+    g = np.mean(g_comps, axis=0)
     g = g / norm(g)
-    target = np.array([0, 1, 0])
+
+    if grav_axis == 'x':
+        to = [1, 0, 0]
+    if grav_axis == 'y':
+        to = [0, 1, 0]
+    if grav_axis == 'z':
+        to = [0, 0, 1]
+
+    target = np.array(to)
 
     k = np.cross(g, target)
     k /= norm(k)
@@ -46,17 +45,23 @@ def rotate_by_gravity(x: pd.DataFrame, fs: float) -> np.ndarray:
 
     return acc
 
-def rotate_by_pca(x: pd.DataFrame) -> np.ndarray:
+def rotate_by_pca(x: pd.DataFrame, around: str = 'x') -> np.ndarray:
     features = x.columns[x.columns.str.contains('acc')]
-    reg_acc = x.loc[~x.irregular.astype(bool), features].values
+    acc = x.loc[~x.irregular.astype(bool), features].values
 
-    xz = reg_acc[: , [0,2]]
-    cov = np.cov(xz.T)
+    if around == 'x':
+        acc_to_rotate = acc[:, [1,2]]
+    if around == 'y':
+        acc_to_rotate = acc[:, [0,2]]
+    if around == 'z':
+        acc_to_rotate = acc[:, [0,1]]
+
+    cov = np.cov(acc_to_rotate.T)
     eigvals, eigvecs = np.linalg.eigh(cov)
     pc1 = eigvecs[:, 1]
 
     theta_pca = np.arctan2(pc1[1], pc1[0])
-    R = to_rotation_matrix(theta_pca)
+    R = rotation_by_axis(theta_pca, axis=around, degrees=False)
 
     acc = x[features].values
     acc = acc @ R.T

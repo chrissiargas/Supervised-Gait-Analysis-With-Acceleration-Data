@@ -52,6 +52,9 @@ class info:
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
 
+            self.y_pos_rotation = [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]
+            self.y_neg_rotation = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+
         if dataset == 'nonan':
             self.path = os.path.join(
                 os.path.expanduser('~'),
@@ -83,6 +86,8 @@ class info:
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
 
+            self.rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+
         if dataset == 'MMgait':
             self.path = os.path.join(
                 os.path.expanduser('~'),
@@ -112,6 +117,8 @@ class info:
             self.imu_features = {"accX": "acc_x",
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
+
+            self.rotation = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
 
         if dataset == 'synthetic':
             self.pos_pairs = {

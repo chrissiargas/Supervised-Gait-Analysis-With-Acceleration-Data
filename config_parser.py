@@ -85,10 +85,14 @@ class Parser:
         self.task = args.main_args['task']
         self.targets = args.main_args['targets']
         self.target_position = args.main_args['target_position']
+        self.target_oversampling = args.main_args['target_oversampling']
 
         self.features = args.main_args['features']
+        self.augmentations = args.main_args['augmentations']
+        self.xyz = args.main_args['xyz']
 
         self.batch_size = args.main_args['batch_size']
+
 
         self.architecture = args.main_args['architecture']
         self.rotation_layer = args.main_args['rotation_layer']
@@ -97,6 +101,7 @@ class Parser:
         self.learning_rate = float(args.main_args['learning_rate'])
         self.head = args.main_args['head']
         self.class_weights = args.main_args['class_weights']
+        self.loss = args.main_args['loss']
 
         self.metrics = args.main_args['metrics']
 

@@ -4,8 +4,7 @@ data_args:
   activities:
   - walk
   position: LH
-  dataset: MMgait-nonan
-
+  dataset: nonan-MMgait
 main_args:
   load_data: false
 
@@ -21,32 +20,36 @@ main_args:
   labels:
   - LF_HS
   task: gait_events
-  targets: one
+  targets: all
   target_position: center
+  target_oversampling: 2
 
   split_type: loso
   test_hold_out:
-  - 107
+  - 1002
   validation: false
   val_hold_out:
 
-  - 3
+  - 1002
   duration: 4
-  stride: 1
+  stride: 4
 
   features:
   - acc_x
   - acc_y
   - acc_z
-  batch_size: 128
+  xyz: true
 
+  batch_size: 128
+  augmentations:
   architecture: cnn-gru
   rotation_layer:
   optimizer: adam
   epochs: 250
   learning_rate: 0.0001
-  head: single
+  head: temporal_single
   class_weights: true
+  loss: tversky
 
   metrics:
   - f1

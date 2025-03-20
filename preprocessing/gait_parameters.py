@@ -13,11 +13,14 @@ def to_binary_window(df: pd.DataFrame, event: str = 'LF_HS', window_size: int = 
 
     return smoothed
 
-def smooth_events(x: pd.DataFrame, event: str, how: Optional[str] = None) -> pd.DataFrame:
+def oversample_events(x: pd.DataFrame, event: str, how: Optional[str] = None, window: int = 0) -> pd.DataFrame:
     if how == 'binary':
-        groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
-        y = groups.apply(lambda g: pd.Series(to_binary_window(g, event, window_size=2), index=g.index))
-        y = y.reset_index(level=['dataset', 'subject_id', 'activity_id'], drop=True)
+        if window > 0:
+            groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
+            y = groups.apply(lambda g: pd.Series(to_binary_window(g, event, window), index=g.index))
+            y = y.reset_index(level=['dataset', 'subject_id', 'activity_id'], drop=True)
+        else:
+            y = x[event]
     else:
         y = x[event]
 

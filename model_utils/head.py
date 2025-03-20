@@ -30,7 +30,7 @@ class single_head(Layer):
                             activation='sigmoid',
                             bias_initializer=bias,
                             kernel_initializer=initializers.glorot_normal()))
-        layers.append(squeeze())
+        # layers.append(squeeze())
 
         self.head_net = Sequential(layers)
 
@@ -67,7 +67,7 @@ class multiple_head(Layer):
         return y
 
 class temporal_head(Layer):
-    def __init__(self, n_units: int, hidden_units = [], bias: Optional[int] = None):
+    def __init__(self, n_units: int, hidden_units = [], bias: Optional[int] = None, length: Optional[int] = None):
         super().__init__()
         self.n_units = n_units
 

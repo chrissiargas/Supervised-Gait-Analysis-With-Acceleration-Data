@@ -7,8 +7,10 @@ from preprocessing.building import builder
 from scipy import signal
 import matplotlib.pyplot as plt
 import numpy as np
+from itertools import permutations
+from scipy.spatial.transform import Rotation
 
-x = pd.DataFrame({'A': [0.2,0.8], 'B': [3,4]})
-print(x)
-x['A_int'] = x['A'].round(decimals=0)
-print(x)
+angle = np.random.normal(loc=0, scale=15, size=10000)
+
+plt.hist(angle, bins=100)
+plt.show()

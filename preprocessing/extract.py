@@ -14,27 +14,8 @@ from typing import Optional
 from preprocessing.filters import butter_lowpass_filter
 from scipy.constants import g
 from typing import List
-
-def inv_calibrate(x: pd.DataFrame, type: str) -> pd.DataFrame:
-    acc_features = x.columns[x.columns.str.contains("acc")]
-
-    a_free = x[acc_features].values
-    g_world = np.array([0, 0, 9.81])
-
-    if type == 'quat':
-        quat_features = ['q1', 'qi', 'qj', 'qk']
-        q = x[quat_features].values
-        rotation = R.from_quat(q[:, [1, 2, 3, 0]])
-
-    elif type == 'euler':
-        rot_features = ['course', 'pitch', 'roll']
-        rot = x[rot_features].values
-        rotation = R.from_euler('ZYX', rot, degrees=True)
-
-    a_raw = rotation.inv().apply(a_free + g_world)
-    x[acc_features] = a_raw
-
-    return x
+from scipy.spatial.transform import Rotation
+from rotation_utils import inv_calibrate
 
 def add_phase(timeseries: pd.DataFrame, event1: str, event2: str) -> np.ndarray:
     event1_indices = np.where(timeseries[event1] == 1)[0]
@@ -106,7 +87,7 @@ class extractor:
             self.sub_offset += 1000
         if 'nonan' in self.dataset:
             self.info = info('nonan')
-            self.nonan_extract('older')
+            self.nonan_extract()
             self.sub_offset += 1000
         if 'MMgait' in self.dataset:
             self.info = info('MMgait')
@@ -164,8 +145,10 @@ class extractor:
 
         df['subject'] += self.sub_offset
 
-        df['acc_x'] *= -1.
-        df['acc_y'] *= -1.
+        acc_features = list(self.info.imu_features.values())
+        a = df[acc_features].values
+        a_rot = Rotation.from_matrix(self.info.rotation).apply(a)
+        df[acc_features] = a_rot
 
         return df
 
@@ -298,5 +281,16 @@ class extractor:
 
         df = df[self.info.columns.keys()]
         df = df.astype(self.info.columns)
+
+        acc_features = list(self.info.imu_features.values())
+        a = df[acc_features].values
+
+        if df['acc_y'].mean() > 0:
+            R = self.info.y_pos_rotation
+        elif df['acc_y'].mean() < 0:
+            R = self.info.y_neg_rotation
+
+        a_rot = Rotation.from_matrix(R).apply(a)
+        df[acc_features] = a_rot
 
         return df

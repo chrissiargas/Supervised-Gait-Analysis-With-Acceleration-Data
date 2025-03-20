@@ -16,7 +16,7 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                 show_events: bool = False, show_phases: bool = False,
                 features: Optional[str] = None, sign: bool = False,
                 turn: Optional = None, raw: bool = False,
-                figpath: Optional[str] = None):
+                figpath: Optional[str] = None, R: Optional[np.ndarray] = None):
 
     if figpath is None:
         figpath = os.path.join('archive', 'figures')
@@ -100,6 +100,19 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
 
                 else:
                     axs.plot(t, phase, linewidth=2, linestyle='dashed', label=name)
+
+        if R is not None:
+            table = axs.table(
+                cellText=np.around(R, 2),
+                loc=2,
+                cellLoc='center',
+                colLabels=['X', 'Y', 'Z'],
+                rowLabels=['X’', 'Y’', 'Z’'],
+                bbox=[0, 0.9, 0.06, 0.1],
+                edges='open'
+            )
+            table.scale(1, 2)
+            axs.axis('off')
 
         plt.legend()
         filepath = os.path.join(figpath, str(subject) + '-' + turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")

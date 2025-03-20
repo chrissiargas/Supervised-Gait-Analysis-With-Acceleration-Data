@@ -7,7 +7,7 @@ from preprocessing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_
                                     add_jerk, add_angle_y_xz, add_angle_z_xy, add_angle_y_x,
                                     add_angle_x_yz)
 from preprocessing.filters import (butter_lowpass_filter, lowpass_smoothing, butter_highpass_filter)
-from preprocessing.gait_parameters import smooth_events
+from preprocessing.gait_parameters import oversample_events
 from preprocessing.rotate import rotate_by_gravity, rotate_by_pca
 import matplotlib.pyplot as plt
 import os
@@ -186,7 +186,7 @@ def smooth(x, filter_type, fs=0, cutoff=0):
 
     return x
 
-def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFrame:
+def get_parameters(x: pd.DataFrame, labels: List[str], task: str, window: int = 0) -> pd.DataFrame:
     x = x.copy()
 
     if labels is None or task is None:
@@ -206,7 +206,7 @@ def get_parameters(x: pd.DataFrame, labels: List[str], task: str) -> pd.DataFram
 
         for in_event in labels:
             x[in_event + '_raw'] = x[in_event]
-            x[in_event] = smooth_events(x, in_event, 'binary')
+            x[in_event] = oversample_events(x, in_event, 'binary', window)
 
         cols_to_drop = list(set(all_events) - set(labels))
         x = x.drop(cols_to_drop, axis=1)

@@ -8,7 +8,7 @@ import gc
 
 from parameters import sl_params
 from preprocessing.building import builder
-from models.supervised import train_evaluate
+from model_utils.supervised import train_evaluate
 from visualize import visualize
 
 import matplotlib.pyplot as plt

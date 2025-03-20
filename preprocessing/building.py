@@ -92,11 +92,15 @@ class builder:
             extract_data = extractor(dataset=self.conf.dataset)
             extract_data()
 
-        self.load_data()
+        selected = [*range(0, 1000, 2), 1002]
+        self.load_data(selected)
 
-    def load_data(self):
+    def load_data(self, selected: List[int]):
         subject_dir = sorted(os.listdir(self.path))
         for sub_file in tqdm(subject_dir):
+            if int(sub_file[2:-4]) not in selected:
+                continue
+
             sub_path = os.path.join(self.path, sub_file)
             sub_df = pd.read_csv(sub_path)
 
@@ -133,7 +137,7 @@ class builder:
 
         def gen():
             for i, (x, y) in enumerate(zip(X, Y)):
-                x = self.transformer(x)
+                x = self.transformer(x, training)
                 y = tf.convert_to_tensor(y, dtype=tf.float32)
                 y = tf.squeeze(y)
 
@@ -172,12 +176,12 @@ class builder:
             if len(self.conf.labels) == 1:
                 self.output_shape = ()
             if len(self.conf.labels) > 1:
-                self.output_shape = Y[1].shape[-1]
+                self.output_shape = Y.shape[-1]
         elif self.conf.targets == 'all':
             if len(self.conf.labels) == 1:
-                self.output_shape = Y[1].shape[1]
+                self.output_shape = Y.shape[1]
             elif len(self.conf.labels) > 1:
-                self.output_shape = Y[1].shape[1:]
+                self.output_shape = Y.shape[1:]
 
         self.output_type = tf.float32
         self.classes = self.conf.labels
@@ -206,19 +210,20 @@ class builder:
 
             self.class_weights = {0: neg_weight, 1: pos_weight}
 
-    def initialize(self):
+    def initialize(self, selected: Optional[int] = None):
         data = self.data.copy()
         data = data.drop(data.columns[0], axis=1)
         data = data.rename(columns={'time': 'timestamp', 'subject': 'subject_id', 'activity': 'activity_id'})
 
+        if selected is not None:
+            data = data[data['subject_id'] == selected]
+
         return data
 
-    def preprocess(self, segmenting: bool = True):
+    def preprocess(self, segmenting: bool = True, selected: Optional[int] = None):
         verbose = False
 
-        data = self.initialize()
-
-        data = data[data['subject_id'].isin([107, 1001, 1002, 1003, 1004, 1005, 1007, 1008, 1010, 1012])]
+        data = self.initialize(selected)
 
         data = trim(data, length = self.conf.trim_length)
         if verbose:
@@ -242,7 +247,7 @@ class builder:
         if verbose:
             plot_one(data)
 
-        data = get_parameters(data, self.conf.labels, self.conf.task)
+        data = get_parameters(data, self.conf.labels, self.conf.task, self.conf.target_oversampling)
         if verbose:
             plot_one(data)
 
@@ -295,7 +300,7 @@ class builder:
 
         return y
 
-    def get_predictions(self, model: keras.Model, data, rotated: bool = False):
+    def get_predictions(self, data, model: keras.Model, rotated: bool = False, oversample: bool = False):
         X, Y, T = data
         Y_ = np.zeros(Y.shape)
         if rotated:
@@ -329,14 +334,26 @@ class builder:
             Y_[offset:] = tf.squeeze(model.predict(batch, verbose=0))
 
         if self.conf.targets == 'all':
-            if len(self.conf.labels) == 1:
-                Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1]))
-                Y_ = Y_[:, np.newaxis]
-            if len(self.conf.labels) > 1:
-                Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1], Y_.shape[2]))
+            if oversample:
+                if len(self.conf.labels) == 1:
+                    Y_ = Y_[:, self.conf.length // 2]
+                    Y_ = Y_[:, np.newaxis]
+                elif len(self.conf.labels) > 1:
+                    Y_ = Y_[:, self.conf.length // 2, :]
+
+            else:
+                if len(self.conf.labels) == 1:
+                    Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1]))
+                    Y_ = Y_[:, np.newaxis]
+                if len(self.conf.labels) > 1:
+                    Y_ = Y_.reshape((Y_.shape[0] * Y_.shape[1], Y_.shape[2]))
 
             t = T[:, 3:]
-            t = t.reshape((t.shape[0] * t.shape[1]))
+
+            if oversample:
+                t = t[:, self.conf.length // 2]
+            else:
+                t = t.reshape((t.shape[0] * t.shape[1]))
 
         elif self.conf.targets == 'one':
             if len(self.conf.labels) == 1:
@@ -354,12 +371,12 @@ class builder:
 
     def compare_yy_(self, model: keras.Model, which: str, subject: int, activity: int,
                     start: int = 0, end: int = -1, rotation: Optional[np.ndarray] = None,
-                    rotated: bool = False):
+                    rotated: bool = False, oversample: bool = False):
 
         if which == 'test':
-            _, df, _ = self.preprocess(segmenting=False)
+            _, df, _ = self.preprocess(segmenting=False, selected=subject)
         elif which == 'train':
-            df, _, _ = self.preprocess(segmenting=False)
+            df, _, _ = self.preprocess(segmenting=False, selected=subject)
 
         df = df.copy()
 
@@ -379,10 +396,11 @@ class builder:
                                   self.conf.targets, self.conf.target_position)
 
         elif self.conf.targets == 'all':
-            segs, _, _ = finalize(df, self.conf.length, self.conf.length, self.conf.task,
+            step = 1 if oversample else self.conf.step
+            segs, _, _ = finalize(df, self.conf.length, step, self.conf.task,
                                   self.conf.targets, self.conf.target_position)
 
-        y_df, X, X_rot = self.get_predictions(model, segs, rotated)
+        y_df, X, X_rot = self.get_predictions(segs, model, rotated, oversample)
 
         df = pd.merge(df, y_df, on='timestamp', how='left')
         real_labels = {label: label + '_real' for label in self.conf.labels}

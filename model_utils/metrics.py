@@ -11,7 +11,7 @@ from config_parser import Parser
 from keras.metrics import binary_accuracy
 import sys
 import time
-from models.losses import get_yy_
+from model_utils.losses import get_yy_
 from keras.metrics import Metric
 from keras import backend as K
 
@@ -45,6 +45,32 @@ class binary_accuracy_class(Metric):
             self.accuracy.assign_add(n_matches)
 
         self.total.assign_add(tf.shape(y_true)[0])
+
+    def f1_scores(classes, conf: Parser):
+        return [binary_accuracy_class(i, name, conf) for i, name in enumerate(classes)]
+
+    class f1_score_class(Metric):
+        def __init__(self, class_index, class_name, conf, **kwargs):
+            super().__init__(name=f"accuracy_{class_name}", **kwargs)
+            self.class_index = class_index
+            self.conf = conf
+
+            self.accuracy = self.add_weight(name="f1", initializer="zeros")
+            self.total = self.add_weight(name="total", initializer="zeros")
+
+        def update_state(self, y_true, y_pred, sample_weight=None):
+            y_true, y_pred = get_yy_(y_true, y_pred, self.conf)
+            y_true = tf.where(y_true > 0.5, 1, 0)
+            y_pred = tf.where(y_pred > 0.5, 1, 0)
+
+            if len(self.conf.labels) == 1:
+                n_matches = get_matches(y_true, y_pred)
+                self.accuracy.assign_add(n_matches)
+            elif len(self.conf.labels) > 2:
+                n_matches = get_matches(y_true[:, self.class_index], y_pred[:, self.class_index])
+                self.accuracy.assign_add(n_matches)
+
+            self.total.assign_add(tf.shape(y_true)[0])
 
     def result(self):
         return self.accuracy / self.total

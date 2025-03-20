@@ -8,16 +8,19 @@ sl_params = {
     'filter_cutoff': 10.0,
     'labels': ['LF_HS'],
     'task': 'gait_events',
-    'targets': 'one',
+    'targets': 'all',
+    'target_oversampling': 2,
     'target_position': 'center',
     'trim_duration': 5,
     'duration': 4,
-    'stride': 1,
+    'stride': 4,
     'features': ['acc_x', 'acc_y', 'acc_z'],
     'split_type': 'loso',
-    'test_hold_out': [107],
+    'test_hold_out': [1002],
     'validation': False,
-    'val_hold_out': [3],
+    'val_hold_out': [1002],
+    'augmentations': None,
+    'xyz': True,
 
     'batch_size': 128,
     'architecture': 'cnn-gru',
@@ -27,7 +30,8 @@ sl_params = {
     'decay_steps': 0,
     'lr_decay': None,
     'learning_rate': 0.0001,
-    'head': 'single',
+    'head': 'temporal_single',
     'class_weights': True,
+    'loss': 'tversky'
 }
 
