@@ -4,13 +4,11 @@ import tensorflow as tf
 
 from model_utils.architectures import CNNGRU_encoder
 from preprocessing.building import builder
-from config_parser import Parser
-from model_utils.metrics import binary_accuracies, Metrics
-from keras.layers import Input
+from config_utils.config_parser import Parser
+from model_utils.metrics import binary_accuracies
 from keras.models import Model
 from keras.optimizers import Adam, Optimizer
 from keras.losses import Loss, Dice, Tversky, BinaryFocalCrossentropy
-import keras.backend as K
 from model_utils.losses import get_weighted_BCE, get_BCE
 from model_utils.head import single_head, multiple_head, temporal_head
 from model_utils.rotation import rotateByAxis

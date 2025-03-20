@@ -1,5 +1,5 @@
 import os
-from config_parser import Parser
+from config_utils.config_parser import Parser
 
 class info:
     def __init__(self, dataset: str):

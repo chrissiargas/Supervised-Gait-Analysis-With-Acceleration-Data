@@ -19,7 +19,7 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                 figpath: Optional[str] = None, R: Optional[np.ndarray] = None):
 
     if figpath is None:
-        figpath = os.path.join('archive', 'figures')
+        figpath = os.path.join('../archive', 'figures')
 
     if subject is not None:
         x = x[x['subject_id'] == subject]

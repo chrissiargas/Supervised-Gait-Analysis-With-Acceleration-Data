@@ -1,15 +1,9 @@
-import matplotlib.pyplot as plt
-
-from config_parser import Parser
-import os
+from config_utils.config_parser import Parser
 from model_utils.supervised import alligaitor
 from preprocessing.building import builder
-from plots import plot_signal
+from plot_utils.plots import plot_signal
 from typing import Optional
 import numpy as np
-from datetime import datetime
-from itertools import permutations
-from scipy.spatial.transform import Rotation
 from rotation_utils import rotation_by_axis
 
 def visualize(path: Optional[str] = None,

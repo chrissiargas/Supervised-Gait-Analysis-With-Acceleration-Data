@@ -1,11 +1,8 @@
 import os.path
 
-import keras
-import tensorflow as tf
 from preprocessing.building import builder
-from config_parser import Parser
+from config_utils.config_parser import Parser
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
-from plots import plot_signal
 import shutil
 from model_utils.model import alligaitor
 from model_utils.metrics import Metrics

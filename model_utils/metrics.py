@@ -1,19 +1,14 @@
 import numpy as np
 import tensorflow as tf
-import matplotlib.pyplot as plt
 from keras.callbacks import Callback
 from keras.losses import BinaryCrossentropy
-from keras.src.layers import average
-from keras.src.ops import binary_crossentropy
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from config_parser import Parser
-from keras.metrics import binary_accuracy
+from config_utils.config_parser import Parser
 import sys
-import time
 from model_utils.losses import get_yy_
 from keras.metrics import Metric
-from keras import backend as K
+
 
 def get_matches(y_true, y_pred):
     return tf.reduce_sum(

@@ -1,15 +1,11 @@
-import copy
-
-import pandas as pd
 import ruamel.yaml
 import os
-import time
 import gc
 
-from parameters import sl_params
+from config_utils.parameters import sl_params
 from preprocessing.building import builder
 from model_utils.supervised import train_evaluate
-from visualize import visualize
+from plot_utils.visualize import visualize
 
 import matplotlib.pyplot as plt
 
@@ -21,7 +17,7 @@ def reset_tensorflow_keras_backend():
 def config_edit(args, parameter, value):
     yaml = ruamel.yaml.YAML()
 
-    with open('config.yaml') as fp:
+    with open('config_utils/config.yaml') as fp:
         data = yaml.load(fp)
 
     for param in data[args]:
@@ -30,14 +26,14 @@ def config_edit(args, parameter, value):
             data[args][param] = value
             break
 
-    with open('config.yaml', 'w') as fb:
+    with open('config_utils/config.yaml', 'w') as fb:
         yaml.dump(data, fb)
 
 
 def config_save(paramsFile):
     yaml = ruamel.yaml.YAML()
 
-    with open('config.yaml') as fp:
+    with open('config_utils/config.yaml') as fp:
         parameters = yaml.load(fp)
 
     with open(paramsFile, 'w') as fb:

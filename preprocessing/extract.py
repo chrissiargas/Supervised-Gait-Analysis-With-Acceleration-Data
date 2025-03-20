@@ -1,18 +1,12 @@
 import os
 
-import matplotlib.pyplot as plt
 import pandas as pd
-from matplotlib.pyplot import legend
-from pkg_resources import to_filename
 from tqdm import tqdm
 from preprocessing.resampling import resample
 import numpy as np
-from config_parser import Parser
+from config_utils.config_parser import Parser
 from preprocessing.info import info
-from scipy.spatial.transform import Rotation as R
 from typing import Optional
-from preprocessing.filters import butter_lowpass_filter
-from scipy.constants import g
 from typing import List
 from scipy.spatial.transform import Rotation
 from rotation_utils import inv_calibrate

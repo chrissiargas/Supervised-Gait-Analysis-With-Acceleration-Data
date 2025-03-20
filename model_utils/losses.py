@@ -1,5 +1,5 @@
 import tensorflow as tf
-from config_parser import Parser
+from config_utils.config_parser import Parser
 
 epsilon = 1e-7
 
