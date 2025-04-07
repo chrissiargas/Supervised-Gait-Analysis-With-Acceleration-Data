@@ -101,6 +101,9 @@ def form(x: pd.DataFrame, length: int, step: int, task: str,
 def finalize(x: pd.DataFrame, length: int, step: int, task: str,
              targets: str, target_pos: str):
 
+    if x.shape[0] == 0:
+        return None, None, None
+
     x = x.copy()
     X, Y, T, sizes, channels = form(x, length, step, task, targets, target_pos)
     return (X, Y, T), sizes, channels

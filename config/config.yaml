@@ -4,7 +4,7 @@ data_args:
   activities:
   - walk
   position: LH
-  dataset: nonan-MMgait
+  dataset: marea-nonan-MMgait
 main_args:
   load_data: false
 
@@ -24,13 +24,10 @@ main_args:
   target_position: center
   target_oversampling: 2
 
-  split_type: loso
-  test_hold_out:
-  - 1002
+  split_type: dataset
+  test_hold_out: mmgait
   validation: false
-  val_hold_out:
-
-  - 1002
+  val_hold_out: mmgait
   duration: 4
   stride: 4
 
@@ -50,12 +47,7 @@ main_args:
   head: temporal_single
   class_weights: true
   loss: tversky
-
-  metrics:
-  - f1
-  - accuracy
-  - precision
-  - recall
+  metric: accuracy
 
 
 

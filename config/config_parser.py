@@ -1,6 +1,5 @@
 import argparse
 import os.path
-
 import yaml
 from os.path import dirname, abspath
 
@@ -31,7 +30,7 @@ class Parser:
             '--main_args',
             default=dict(),
             type=dict,
-            help='preprocessing & training arguments'
+            help='pre_processing & training arguments'
         )
 
 
@@ -102,7 +101,6 @@ class Parser:
         self.head = args.main_args['head']
         self.class_weights = args.main_args['class_weights']
         self.loss = args.main_args['loss']
-
-        self.metrics = args.main_args['metrics']
+        self.metric = args.main_args['metric']
 
 

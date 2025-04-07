@@ -15,10 +15,10 @@ sl_params = {
     'duration': 4,
     'stride': 4,
     'features': ['acc_x', 'acc_y', 'acc_z'],
-    'split_type': 'loso',
-    'test_hold_out': [1002],
+    'split_type': 'dataset',
+    'test_hold_out': 'mmgait',
     'validation': False,
-    'val_hold_out': [1002],
+    'val_hold_out': 'mmgait',
     'augmentations': None,
     'xyz': True,
 
@@ -32,6 +32,7 @@ sl_params = {
     'learning_rate': 0.0001,
     'head': 'temporal_single',
     'class_weights': True,
-    'loss': 'tversky'
+    'loss': 'tversky',
+    'metric': 'accuracy'
 }
 

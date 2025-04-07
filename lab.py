@@ -1,16 +1,11 @@
+import numpy as np
 import pandas as pd
-import tensorflow as tf
-import numpy as np
+
+from post_processing.postprocess import *
 import matplotlib.pyplot as plt
-from preprocessing.building import builder
+import seaborn as sns
+from typing import Dict, List
 
-from scipy import signal
-import matplotlib.pyplot as plt
-import numpy as np
-from itertools import permutations
-from scipy.spatial.transform import Rotation
-
-angle = np.random.normal(loc=0, scale=15, size=10000)
-
-plt.hist(angle, bins=100)
-plt.show()
+B = pd.DataFrame({'a': [1,2,3], 'b': [4,5,6]})
+C = pd.DataFrame({'a': [1,2,3], 'c': [7,8,9]})
+print(pd.merge(B, C, on='a', how='left'))

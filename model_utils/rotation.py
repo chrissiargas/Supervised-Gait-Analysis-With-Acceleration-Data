@@ -12,7 +12,7 @@ from keras import initializers
 from tensorflow_graphics.geometry.transformation import quaternion, rotation_matrix_3d
 import math
 
-from preprocessing.building import activity
+from pre_processing.building import activity
 
 class get_mean(Layer):
     def call(self, x):

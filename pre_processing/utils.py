@@ -3,15 +3,18 @@ import pandas as pd
 import numpy as np
 from typing import Optional, List, Tuple, Dict
 from sklearn.preprocessing import MinMaxScaler, StandardScaler
-from preprocessing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_norm_yz,
-                                    add_jerk, add_angle_y_xz, add_angle_z_xy, add_angle_y_x,
-                                    add_angle_x_yz)
-from preprocessing.filters import (butter_lowpass_filter, lowpass_smoothing, butter_highpass_filter)
-from preprocessing.gait_parameters import oversample_events
-from preprocessing.rotate import rotate_by_gravity, rotate_by_pca
+from tensorflow.python.ops.numpy_ops.np_array_ops import around
+
+from pre_processing.features import (add_norm_xy, add_norm_xz, add_norm_xyz, add_norm_yz,
+                                     add_jerk, add_angle_y_xz, add_angle_z_xy, add_angle_y_x,
+                                     add_angle_x_yz)
+from pre_processing.filters import (butter_lowpass_filter, lowpass_smoothing, butter_highpass_filter)
+from pre_processing.gait_parameters import oversample_events
+from pre_processing.rotate import rotate_by_gravity, rotate_by_pca
 import matplotlib.pyplot as plt
 import os
-from preprocessing.irregularities import *
+from pre_processing.irregularities import *
+from pre_processing.augmentations import random_rotate
 
 figpath = os.path.join('archive', 'figures')
 
@@ -215,6 +218,29 @@ def get_parameters(x: pd.DataFrame, labels: List[str], task: str, window: int = 
         x = x.drop(cols_to_drop, axis=1)
 
     return x
+
+def augment(S: Tuple[np.ndarray, np.ndarray, np.ndarray], augmentations: List[str], channels: Dict) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    if augmentations is None:
+        return S
+
+    X, Y, T = S
+    X_aug = np.zeros(X.shape)
+
+    xyz_channels = [channels['acc_x'],
+                    channels['acc_y'],
+                    channels['acc_z']]
+
+    for aug in augmentations:
+        if aug == 'rotate':
+            xyz = X[..., xyz_channels]
+            vrandom_rotate = np.vectorize(lambda w: random_rotate(w, around='x'), signature='(n,c)->(m,k)')
+            X_aug[..., xyz_channels] = vrandom_rotate(xyz)
+
+
+    S = X_aug, Y, T
+
+    return S
+
 
 def separate(S: Tuple[np.ndarray, np.ndarray, np.ndarray], by: Optional[str] = None) -> Dict:
     _, _, info = S

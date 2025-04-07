@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from preprocessing.filters import butter_lowpass_filter
+from pre_processing.filters import butter_lowpass_filter
 
 
 def add_norm_xyz(x: pd.DataFrame) -> pd.DataFrame:

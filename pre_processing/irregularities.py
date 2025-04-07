@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.linalg import norm
 import math
-from preprocessing.filters import butter_lowpass_filter
+from pre_processing.filters import butter_lowpass_filter
 from scipy.constants import g
 
 def get_gravity(x: pd.DataFrame, fs: float) -> np.ndarray:

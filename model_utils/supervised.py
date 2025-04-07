@@ -1,7 +1,7 @@
 import os.path
 
-from preprocessing.building import builder
-from config_utils.config_parser import Parser
+from pre_processing.building import builder
+from config.config_parser import Parser
 from keras.callbacks import TensorBoard, EarlyStopping, ModelCheckpoint
 import shutil
 from model_utils.model import alligaitor
@@ -16,7 +16,8 @@ def make_files(config):
     except OSError as e:
         print("Error: %s - %s." % (e.filename, e.strerror))
 
-    model_dir = os.path.join('archive', 'model_weights', config.architecture)
+    model_args = f'{config.task}-{config.targets}-{str(config.labels)}'
+    model_dir = os.path.join('archive', 'model_weights', model_args)
     model_file = '%s.weights.h5' % config.architecture
     model_file = os.path.join(model_dir, model_file)
 

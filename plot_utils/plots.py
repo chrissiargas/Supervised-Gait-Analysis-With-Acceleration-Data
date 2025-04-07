@@ -9,17 +9,100 @@ import shutil
 second_plot = True
 print(f"Current working directory: {os.getcwd()}")
 
+def get_color(name: str):
+    if 'LF_HS' in name:
+        if 'prob' in name:
+            return 'maroon'
+        elif 'raw' in name:
+            return 'red'
+    elif 'LF_TO' in name:
+        if 'prob' in name:
+            return 'olive'
+        elif 'raw' in name:
+            return 'yellowgreen'
+    elif 'RF_HS' in name:
+        if 'prob' in name:
+            return 'blue'
+        elif 'raw' in name:
+            return 'royalblue'
+    elif 'RF_TO' in name:
+        if 'prob' in name:
+            return 'darkviolet'
+        elif 'raw' in name:
+            return 'mediumpurple'
+
+def plot_results(x: pd.DataFrame, start: Optional[int] = None, length: Optional[int] = None,
+                 show_events: bool = False, show_phases: bool = False,
+                 turn: Optional = None, raw: bool = False, real: bool = False, signal: bool = False,
+                 figpath: Optional[str] = None):
+
+    if figpath is None:
+        figpath = os.path.join('archive', 'figures')
+
+    if turn is not None:
+        turn = str(turn)
+    else:
+        turn = ''
+
+    feature_cols = x.columns[x.columns.str.contains('acc')]
+    events_cols = x.columns[x.columns.str.contains('HS|TO')]
+    phases_cols = x.columns[x.columns.str.contains('stance')]
+
+    t = x['timestamp'].values
+    sgn = x[feature_cols].values
+    evs = x[events_cols].values
+    phases = x[phases_cols].values
+
+    if start is not None and length is not None:
+        t = t[start: start + length]
+        t = pd.to_datetime(t, unit='ms')
+        sgn = sgn[start: start + length]
+        evs = evs[start: start + length]
+        phases = phases[start: start + length] * 10
+
+    fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+
+    if signal:
+        axs.plot( t, sgn, linewidth=1, label=feature_cols)
+
+    if show_events:
+        for ev, name in zip(evs.transpose(), events_cols):
+            color = get_color(name)
+
+            if 'prob' in name:
+                axs.plot(t, ev * 10., linewidth=2, linestyle='solid', label=name,
+                         color=color, alpha=0.6)
+                continue
+
+            elif 'raw' in name and raw:
+                ev_ixs = np.where(ev == 1)
+                axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
+                           linewidth=1, linestyle='solid', label=name, colors=color)
+
+            elif 'real' in name and real:
+                axs.plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
+                continue
+
+    if show_phases:
+        pass
+
+    plt.legend()
+    filepath = os.path.join(figpath, turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
+    plt.savefig(filepath, format="png", bbox_inches="tight")
+    plt.close()
+
+
 def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                 subject: Optional[int] = None, activity: Optional[int] = None,
                 mode: Optional[str] = None, population: Optional[str] = None,
                 start: Optional[int] = None, length: Optional[int] = None,
                 show_events: bool = False, show_phases: bool = False,
                 features: Optional[str] = None, sign: bool = False,
-                turn: Optional = None, raw: bool = False,
+                turn: Optional = None, raw: bool = True, real: bool = False,
                 figpath: Optional[str] = None, R: Optional[np.ndarray] = None):
 
     if figpath is None:
-        figpath = os.path.join('../archive', 'figures')
+        figpath = os.path.join('archive', 'figures')
 
     if subject is not None:
         x = x[x['subject_id'] == subject]
@@ -80,7 +163,7 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
                     axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
                                linewidth=1, linestyle='solid', label=name)
 
-                elif 'real' in name:
+                elif 'real' in name and real:
                     axs.plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
                     continue
 

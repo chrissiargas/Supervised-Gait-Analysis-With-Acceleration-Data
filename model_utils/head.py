@@ -16,7 +16,7 @@ class squeeze(Layer):
         return tf.squeeze(x, axis=-1)
 
 class single_head(Layer):
-    def __init__(self,  n_units: int, hidden_units = [], bias: Optional[int] = None):
+    def __init__(self,  n_units: int, hidden_units = [], temporal: bool = False):
         super().__init__()
 
         layers = []
@@ -26,11 +26,10 @@ class single_head(Layer):
             layers.append(Dense(hidden_unit, kernel_initializer=initializers.he_normal()))
             layers.append(ReLU())
 
-        layers.append(Dense(n_units,
-                            activation='sigmoid',
-                            bias_initializer=bias,
+        layers.append(Dense(n_units, activation='sigmoid',
                             kernel_initializer=initializers.glorot_normal()))
-        # layers.append(squeeze())
+        if not temporal:
+            layers.append(squeeze())
 
         self.head_net = Sequential(layers)
 

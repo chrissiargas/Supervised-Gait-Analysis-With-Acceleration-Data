@@ -1,7 +1,7 @@
 import numpy as np
-from config_utils.config_parser import Parser
+from config.config_parser import Parser
 import tensorflow as tf
-from preprocessing.augmentations import random_rotate
+from pre_processing.augmentations import random_rotate
 from typing import Dict
 
 class transformer:

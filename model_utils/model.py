@@ -3,19 +3,23 @@ import keras
 import tensorflow as tf
 
 from model_utils.architectures import CNNGRU_encoder
-from preprocessing.building import builder
-from config_utils.config_parser import Parser
-from model_utils.metrics import binary_accuracies
+from pre_processing.building import builder
+from config.config_parser import Parser
+from model_utils.metrics import binary_accuracies, f1_scores
 from keras.models import Model
 from keras.optimizers import Adam, Optimizer
 from keras.losses import Loss, Dice, Tversky, BinaryFocalCrossentropy
 from model_utils.losses import get_weighted_BCE, get_BCE
 from model_utils.head import single_head, multiple_head, temporal_head
 from model_utils.rotation import rotateByAxis
-
+from typing import Optional
 
 class alligaitor(Model):
-    def __init__(self, data: builder, *args, **kwargs):
+    def __init__(self, data: builder,
+                 rotation_layer: Optional[str] = None,
+                 architecture: Optional[str] = None,
+                 head: Optional[str] = None,
+                 *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         config = Parser()
@@ -24,27 +28,31 @@ class alligaitor(Model):
 
         self.class_weights = data.class_weights if config.class_weights else None
 
-        if config.rotation_layer is None:
+        rotation_layer = rotation_layer if rotation_layer else config.rotation_layer
+        if rotation_layer is None:
             self.rotation_layer = None
-        elif config.rotation_layer == 'rotate_by_axis':
+        elif rotation_layer == 'rotate_by_axis':
             self.rotation_layer = rotateByAxis(data.input_shape)
         else:
             self.rotation_layer = None
 
         units = 64
-        if config.architecture == 'cnn-gru':
+
+        architecture = architecture if architecture else config.architecture
+        if architecture == 'cnn-gru':
             self.encoder_layer = CNNGRU_encoder(units)
         else:
             self.encoder_layer = None
 
-        if config.head == 'single':
-            self.head_layer = single_head(len(config.labels), [units // 2])
-        elif config.head == 'multi':
+        head = head if head else config.head
+        if head == 'single':
+            self.head_layer = single_head(len(config.labels), [units // 2], temporal=False)
+        elif head == 'multi':
             self.head_layer = multiple_head(len(config.labels), [units // 2])
-        elif config.head == 'temporal':
+        elif head == 'temporal':
             self.head_layer = temporal_head(len(config.labels), [units // 2])
-        elif config.head == 'temporal_single':
-            self.head_layer = single_head(self.conf.length, [units // 2])
+        elif head == 'temporal_single':
+            self.head_layer = single_head(self.conf.length, [units // 2], temporal=True)
         else:
             self.head_layer = None
 
@@ -52,29 +60,35 @@ class alligaitor(Model):
         self.optimizer = Optimizer(learning_rate=config.learning_rate)
         self.target_loss = Loss()
         self.BCE_loss_tracker = None
-        self.accuracy_trackers = None
+        self.metric_trackers = None
 
-    def compile(self, *args, **kwargs):
+    def compile(self, loss: Optional[str] = None, *args, **kwargs):
         super().compile(*args, **kwargs)
 
         if self.conf.optimizer == 'adam':
             self.optimizer = Adam(learning_rate=self.conf.learning_rate)
 
-        if self.conf.loss == 'bce':
+        loss = loss if loss is not None else self.conf.loss
+        if loss == 'bce':
             if self.class_weights:
                 self.target_loss = get_weighted_BCE(self.class_weights, self.conf)
             elif self.class_weights:
                 self.target_loss = get_BCE(self.conf)
 
-        elif self.conf.loss == 'tversky':
+        elif loss == 'tversky':
             self.target_loss = Tversky(alpha=0.7, beta=0.3)
-        elif self.conf.loss == 'dice':
+        elif loss == 'dice':
             self.target_loss = Dice()
-        elif self.conf.loss == 'focal_bce':
+        elif loss == 'focal_bce':
             self.target_loss = BinaryFocalCrossentropy()
 
         self.BCE_loss_tracker = keras.metrics.Mean(name='loss')
-        self.accuracy_trackers = binary_accuracies(self.classes, self.conf)
+
+        if self.conf.metric == 'accuracy':
+            self.metric_trackers = binary_accuracies(self.classes, self.conf)
+        elif self.conf.metric == 'f1_score':
+            self.metric_trackers = f1_scores(self.classes, self.conf)
+
 
     def build_model(self, inputs_shape):
         self.build(inputs_shape)
@@ -101,7 +115,7 @@ class alligaitor(Model):
     def metrics(self):
         return [
             self.BCE_loss_tracker,
-            *self.accuracy_trackers
+            *self.metric_trackers
         ]
 
     @tf.function
@@ -140,8 +154,8 @@ class alligaitor(Model):
         self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
 
         self.BCE_loss_tracker.update_state(total_loss)
-        for accuracy_tracker in self.accuracy_trackers:
-            accuracy_tracker.update_state(y, y_)
+        for metric_tracker in self.metric_trackers:
+            metric_tracker.update_state(y, y_)
 
         return {m.name: m.result() for m in self.metrics}
 
@@ -162,8 +176,8 @@ class alligaitor(Model):
         loss = self.target_loss(y, y_)
 
         self.BCE_loss_tracker.update_state(loss)
-        for accuracy_tracker in self.accuracy_trackers:
-            accuracy_tracker.update_state(y, y_)
+        for metric_tracker in self.metric_trackers:
+            metric_tracker.update_state(y, y_)
 
         return {m.name: m.result() for m in self.metrics}
 

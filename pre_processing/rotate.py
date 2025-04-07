@@ -3,8 +3,8 @@ from scipy.spatial.transform import Rotation as R
 from scipy.linalg import expm, norm
 import numpy as np
 import pandas as pd
-from preprocessing.filters import butter_lowpass_filter
-from preprocessing.irregularities import get_gravity
+from pre_processing.filters import butter_lowpass_filter
+from pre_processing.irregularities import get_gravity
 from rotation_utils import rotation_by_axis
 
 def get_grav_comps(x: pd.DataFrame, fs: float) -> np.ndarray:

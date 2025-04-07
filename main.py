@@ -27,7 +27,7 @@ for gpu in gpus:
 def main():
     experiment = 'supervised'
     if experiment == 'supervised':
-        supervised(vis=True)
+        supervised()
 
 if __name__ == '__main__':
     main()

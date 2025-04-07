@@ -4,17 +4,26 @@ from keras.callbacks import Callback
 from keras.losses import BinaryCrossentropy
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from config_utils.config_parser import Parser
+from config.config_parser import Parser
 import sys
 from model_utils.losses import get_yy_
 from keras.metrics import Metric
 
+epsilon = 1e-7
 
 def get_matches(y_true, y_pred):
     return tf.reduce_sum(
         tf.cast(tf.equal(y_true, y_pred),
                 tf.float32)
     )
+
+def get_scores(y_true, y_pred):
+    tp = tf.reduce_sum(tf.cast(y_true * y_pred,tf.float32))
+    fp = tf.reduce_sum(tf.cast(((1-y_true) * y_pred),tf.float32))
+    fn = tf.reduce_sum(tf.cast(y_true * (1-y_pred),tf.float32))
+
+    return tp, fp, fn
+
 def binary_accuracies(classes, conf: Parser):
     return [binary_accuracy_class(i, name, conf) for i, name in enumerate(classes)]
 
@@ -41,38 +50,50 @@ class binary_accuracy_class(Metric):
 
         self.total.assign_add(tf.shape(y_true)[0])
 
-    def f1_scores(classes, conf: Parser):
-        return [binary_accuracy_class(i, name, conf) for i, name in enumerate(classes)]
-
-    class f1_score_class(Metric):
-        def __init__(self, class_index, class_name, conf, **kwargs):
-            super().__init__(name=f"accuracy_{class_name}", **kwargs)
-            self.class_index = class_index
-            self.conf = conf
-
-            self.accuracy = self.add_weight(name="f1", initializer="zeros")
-            self.total = self.add_weight(name="total", initializer="zeros")
-
-        def update_state(self, y_true, y_pred, sample_weight=None):
-            y_true, y_pred = get_yy_(y_true, y_pred, self.conf)
-            y_true = tf.where(y_true > 0.5, 1, 0)
-            y_pred = tf.where(y_pred > 0.5, 1, 0)
-
-            if len(self.conf.labels) == 1:
-                n_matches = get_matches(y_true, y_pred)
-                self.accuracy.assign_add(n_matches)
-            elif len(self.conf.labels) > 2:
-                n_matches = get_matches(y_true[:, self.class_index], y_pred[:, self.class_index])
-                self.accuracy.assign_add(n_matches)
-
-            self.total.assign_add(tf.shape(y_true)[0])
-
     def result(self):
         return self.accuracy / self.total
 
     def reset_state(self):
-        self.accuracy.assign(0.)
-        self.total.assign(0.)
+        self.accuracy.assign(0.0)
+        self.total.assign(0.0)
+
+def f1_scores(classes, conf: Parser):
+    return [F1score_class(i, name, conf) for i, name in enumerate(classes)]
+
+class F1score_class(Metric):
+    def __init__(self, class_index, class_name, conf, **kwargs):
+        super().__init__(name=f"f1_{class_name}", **kwargs)
+        self.class_index = class_index
+        self.conf = conf
+
+        self.true_positives = self.add_weight(name='tp', initializer='zeros')
+        self.false_positives = self.add_weight(name='fp', initializer='zeros')
+        self.false_negatives = self.add_weight(name='fn', initializer='zeros')
+
+    def update_state(self, y_true, y_pred, sample_weight=None):
+        y_true, y_pred = get_yy_(y_true, y_pred, self.conf)
+        y_true = tf.where(y_true > 0.5, 1, 0)
+        y_pred = tf.where(y_pred > 0.5, 1, 0)
+
+        if len(self.conf.labels) == 1:
+            tp, fp, fn = get_scores(y_true, y_pred)
+
+        elif len(self.conf.labels) > 2:
+            tp, fp, fn = get_scores(y_true[:, self.class_index], y_pred[:, self.class_index])
+
+        self.true_positives.assign_add(tp)
+        self.false_positives.assign_add(fp)
+        self.false_negatives.assign_add(fn)
+
+    def result(self):
+        precision = self.true_positives / (self.true_positives + self.false_positives + epsilon)
+        recall = self.true_positives / (self.true_positives + self.false_negatives + epsilon)
+        return 2 * precision * recall / (precision + recall + epsilon)
+
+    def reset_state(self):
+        self.true_positives.assign(0)
+        self.false_positives.assign(0)
+        self.false_negatives.assign(0)
 
 class Metrics(Callback):
     def __init__(self, set, steps, file_writer,

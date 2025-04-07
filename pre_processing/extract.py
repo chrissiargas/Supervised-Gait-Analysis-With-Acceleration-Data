@@ -2,10 +2,10 @@ import os
 
 import pandas as pd
 from tqdm import tqdm
-from preprocessing.resampling import resample
+from pre_processing.resampling import resample
 import numpy as np
-from config_utils.config_parser import Parser
-from preprocessing.info import info
+from config.config_parser import Parser
+from pre_processing.info import info
 from typing import Optional
 from typing import List
 from scipy.spatial.transform import Rotation

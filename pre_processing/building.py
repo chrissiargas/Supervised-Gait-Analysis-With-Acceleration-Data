@@ -1,17 +1,20 @@
 import keras
-from config_utils.config_parser import Parser
+import pandas as pd
+from numpy.ma.core import get_data
+
+from config.config_parser import Parser
 import tensorflow as tf
-from preprocessing.utils import (remove_g, produce, smooth, get_parameters,
-                                 trim, separate, orient, is_irregular)
-from preprocessing.splitting import split_all
-from preprocessing.segments import finalize
-from preprocessing.transformations import transformer
+from pre_processing.utils import (remove_g, produce, smooth, get_parameters,
+                                  trim, separate, orient, is_irregular)
+from pre_processing.splitting import split_all
+from pre_processing.segments import finalize
+from pre_processing.transformations import transformer
 import random
 from tqdm import tqdm
 from plot_utils.plots import *
-from preprocessing.extract import extractor
+from pre_processing.extract import extractor
 from scipy.spatial.transform import Rotation
-
+from pre_processing.utils import augment
 seed = 45
 position = 'left_lower_arm'
 dataset = None
@@ -49,8 +52,9 @@ def set_shuffle(set, idx):
 
     return a[shuffled_idx], b[shuffled_idx], c[shuffled_idx]
 
+SUBJECTS = [*range(1000, 2000, 2), *range(2000, 2006)]
 class builder:
-    def __init__(self, generate: bool = False):
+    def __init__(self, generate: bool = False, subjects: Optional[List[int]] = None):
         self.classes = None
         self.channels = None
         self.info = None
@@ -84,14 +88,17 @@ class builder:
             extract_data = extractor(dataset=self.conf.dataset)
             extract_data()
 
-        selected = [*range(0, 1000, 2), 1002]
-        self.load_data(selected)
+        subjects = subjects if subjects else SUBJECTS
+        self.load_data(subjects)
 
-    def load_data(self, selected: List[int]):
+    def load_data(self, subjects: Optional[List[int]] = None):
+        self.data = None
+
         subject_dir = sorted(os.listdir(self.path))
         for sub_file in tqdm(subject_dir):
-            if int(sub_file[2:-4]) not in selected:
-                continue
+            if subjects is not None:
+                if int(sub_file[2:-4]) not in subjects:
+                    continue
 
             sub_path = os.path.join(self.path, sub_file)
             sub_df = pd.read_csv(sub_path)
@@ -103,8 +110,15 @@ class builder:
 
         self.data = self.data.sort_values(by=['dataset', 'subject'])
 
-    def __call__(self):
-        train, test, val = self.preprocess()
+    def __call__(self, selected: Optional[List[int]] = None):
+        train, test, val = self.preprocess(True, selected)
+
+        if not train:
+            self.get_transformers()
+            self.get_shapes(test[1])
+            self.get_class_weights(test[1])
+
+            return
 
         if self.randomize:
             train_idx = separate(train)
@@ -118,7 +132,7 @@ class builder:
         self.test_size = test[0].shape[0]
         self.val_size = val[0].shape[0]
 
-        train = self.generate(train, training=True)
+        train = self.generate(train, training=False)
         test = self.generate(test, training=False)
         val = self.generate(val, training=False)
 
@@ -202,19 +216,17 @@ class builder:
 
             self.class_weights = {0: neg_weight, 1: pos_weight}
 
-    def initialize(self, selected: Optional[int] = None):
+    def initialize(self, selected: Optional[List[int]] = None):
         data = self.data.copy()
         data = data.drop(data.columns[0], axis=1)
         data = data.rename(columns={'time': 'timestamp', 'subject': 'subject_id', 'activity': 'activity_id'})
 
         if selected is not None:
-            data = data[data['subject_id'] == selected]
+            data = data[data['subject_id'].isin(selected)]
 
         return data
-
-    def preprocess(self, segmenting: bool = True, selected: Optional[int] = None):
-        verbose = False
-
+    
+    def prepare(self, selected: Optional[List[int]] = None, verbose: bool = False) -> pd.DataFrame:
         data = self.initialize(selected)
 
         data = trim(data, length = self.conf.trim_length)
@@ -243,12 +255,26 @@ class builder:
         if verbose:
             plot_one(data)
 
+        return data
+
+
+    def preprocess(self, segmenting: bool = True, selected: Optional[List[int]] = None):
+        verbose = False
+        augment_before = True
+
+        data = self.prepare(selected, verbose)
+
         train, test, val = split_all(data, self.conf.validation, self.conf.split_type, self.conf.test_hold_out, self.conf.val_hold_out, seed)
         if verbose:
             plot_one(train)
 
         if segmenting:
             train, test, val = self.to_windows(train, test, val)
+
+        if augment_before:
+            train = augment(train, self.conf.augmentations, self.channels)
+            test = augment(test, self.conf.augmentations, self.channels)
+            val = augment(val, self.conf.augmentations, self.channels)
 
         return train, test, val
 
@@ -257,7 +283,7 @@ class builder:
         val_step = 'same'
         lowest_step = 1
 
-        train, _, self.channels = finalize(train, self.conf.length,
+        train, _, _ = finalize(train, self.conf.length,
                                            self.conf.step, self.conf.task,
                                            self.conf.targets, self.conf.target_position)
 
@@ -274,39 +300,101 @@ class builder:
                       else self.conf.step // 10 if test_step == 'low'
                       else lowest_step)
 
-        test, _, _ = finalize(test, self.conf.length,
+        test, _, self.channels = finalize(test, self.conf.length,
                               which_step, self.conf.task,
                               self.conf.targets, self.conf.target_position)
 
         return train, test, val
 
-    def to_y(self, y):
-        if self.conf.targets == 'one':
-            y = tf.squeeze(y)
+    def get_yy_(self, model: keras.Model,
+                subjects: List[int],
+                activities: Optional[List[int]] = None,
+                start: int = 0, end: Optional[int] = None,
+                rotation: Optional[np.ndarray] = None,
+                oversample: bool = True) -> pd.DataFrame:
 
-        if self.conf.targets == 'all':
-            new_shape = (y.shape[0] * y.shape[1]) if len(self.conf.labels) == 1 else \
-                (y.shape[0] * y.shape[1], y.shape[2])
+        df, windows = self.get_data(subjects, activities, rotation, oversample)
+        yy_ = None
 
-            y = tf.squeeze(y).reshape(new_shape)
+        for subject, sub_windows in windows.items():
+            sub_yy_ = None
 
-        return y
+            for activity, act_windows in sub_windows.items():
+                act_df = df[subject][activity]
 
-    def get_predictions(self, data, model: keras.Model, rotated: bool = False, oversample: bool = False):
+                y = self.get_predictions(act_windows, model, oversample, start, end)
+                act_yy_ = pd.merge(act_df, y, on='timestamp', how='left')
+                real_labels = {label: label + '_real' for label in self.conf.labels}
+                act_yy_ = act_yy_.rename(columns=real_labels)
+
+                if sub_yy_ is None:
+                    sub_yy_ = act_yy_
+                else:
+                    sub_yy_ = pd.concat([sub_yy_, act_yy_], axis=0)
+
+            if yy_ is None:
+                yy_ = sub_yy_
+            else:
+                yy_ = pd.concat([yy_, sub_yy_], axis=0)
+
+        return yy_
+
+    def get_data(self, subjects: List[int],
+                 activities: Optional[List[int]] = None,
+                 rotation: Optional[np.ndarray] = None,
+                 oversample: bool = False) -> Tuple[Dict, Dict]:
+        self.load_data(subjects)
+        data = self.prepare(subjects)
+
+        df = {}
+        windows = {}
+
+        subjects = data['subject_id'].unique()
+        for subject in subjects:
+            df[subject] = {}
+            windows[subject] = {}
+
+            sub_data = data[data['subject_id'] == subject]
+            activities = activities if activities else sub_data['activity_id'].unique()
+            for activity in activities:
+                act_data = sub_data[sub_data['activity_id'] == activity]
+
+                if rotation is not None:
+                    acc_features = act_data.columns[act_data.columns.str.contains("acc")]
+                    a = act_data[acc_features].values
+                    a_rot = Rotation.from_matrix(rotation).apply(a)
+                    act_data[acc_features] = a_rot
+
+                if self.conf.targets == 'one':
+                    x, _, _ = finalize(act_data, self.conf.length, 1, self.conf.task,
+                                             self.conf.targets, self.conf.target_position)
+
+                elif self.conf.targets == 'all':
+                    step = 1 if oversample else self.conf.step
+                    x, _, _ = finalize(act_data, self.conf.length, step, self.conf.task,
+                                             self.conf.targets, self.conf.target_position)
+
+                windows[subject][activity] = x
+                df[subject][activity] = act_data
+
+        return df, windows
+
+    def get_predictions(self, data, model: keras.Model, oversample: bool = False, start: int = 0, end: int = -1,):
         X, Y, T = data
+
+        # X = X[start:end].copy()
+        # Y = Y[start:end].copy()
+        # T = T[start:end].copy()
+
         Y_ = np.zeros(Y.shape)
-        if rotated:
-            X_rot = np.zeros(X.shape)
-        else:
-            X_rot = None
 
         batch = None
         offset = 0
 
         for i, x in enumerate(X):
             if i % 300 == 0 and i > 0:
-                if rotated:
-                    X_rot[offset: i] = model.layers[0](batch)
+                # if rotated:
+                #     rotated_X[offset: i] = model.layers[0](batch)
 
                 Y_[offset: i] = tf.squeeze(model.predict(batch, verbose=0))
                 offset = i
@@ -320,8 +408,8 @@ class builder:
                 batch = np.concatenate([batch, x], axis=0)
 
         if batch is not None:
-            if rotated:
-                X_rot[offset:] = model.layers[0](batch)
+            # if rotated:
+            #     rotated_X[offset:] = model.layers[0](batch)
 
             Y_[offset:] = tf.squeeze(model.predict(batch, verbose=0))
 
@@ -359,46 +447,8 @@ class builder:
         y_df = pd.DataFrame(y_df, columns=[*prob_labels , 'timestamp'])
         y_df[pred_labels] = np.round(y_df[prob_labels].values.astype(np.float32))
 
-        return y_df, X, X_rot
+        return y_df
 
-    def compare_yy_(self, model: keras.Model, which: str, subject: int, activity: int,
-                    start: int = 0, end: int = -1, rotation: Optional[np.ndarray] = None,
-                    rotated: bool = False, oversample: bool = False):
-
-        if which == 'test':
-            _, df, _ = self.preprocess(segmenting=False, selected=subject)
-        elif which == 'train':
-            df, _, _ = self.preprocess(segmenting=False, selected=subject)
-
-        df = df.copy()
-
-        df = df[df['subject_id'] == subject]
-        df = df[df['activity_id'] == activity]
-        df = df.iloc[start:end]
-
-        if rotation is not None:
-            acc_features = df.columns[df.columns.str.contains("acc")]
-
-            a = df[acc_features].values
-            a_rot = Rotation.from_matrix(rotation).apply(a)
-            df[acc_features] = a_rot
-
-        if self.conf.targets == 'one':
-            segs, _, _ = finalize(df, self.conf.length, 1, self.conf.task,
-                                  self.conf.targets, self.conf.target_position)
-
-        elif self.conf.targets == 'all':
-            step = 1 if oversample else self.conf.step
-            segs, _, _ = finalize(df, self.conf.length, step, self.conf.task,
-                                  self.conf.targets, self.conf.target_position)
-
-        y_df, X, X_rot = self.get_predictions(segs, model, rotated, oversample)
-
-        df = pd.merge(df, y_df, on='timestamp', how='left')
-        real_labels = {label: label + '_real' for label in self.conf.labels}
-        df = df.rename(columns=real_labels)
-
-        return df, X, X_rot
 
 
 
