@@ -29,12 +29,6 @@ def split_with_id(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
     return res_df, data_df
 
-def modify_args(task, targets, labels, head):
-    config_edit('main_args', 'task', task)
-    config_edit('main_args', 'targets', targets)
-    config_edit('main_args', 'labels', labels)
-    config_edit('main_args', 'head', head)
-
 def get_preds(x: pd.DataFrame, label: str) -> np.ndarray:
     x = x.copy()
 
@@ -82,14 +76,18 @@ def reconstruct_y(task: str, targets: str, arch: str,
     results = None
     for labels in all_labels:
         result_cols = [*labels, *ft_cols, *id_cols]
-        modify_args(task, targets, labels, head)
+
+        data.conf.task = task
+        data.conf.targets = targets
+        data.conf.labels = labels
+        data.conf.head = head
 
         model_args = f'{task}-{targets}-{str(labels)}'
         model_dir = f'archive/model_weights/{model_args}'
         model_file = '%s.weights.h5' % arch
         model_file = f'{model_dir}/{model_file}'
 
-        model = alligaitor(data)
+        model = alligaitor(data, head=head)
         model.compile()
         model.build_model(data.input_shape)
         model.load_weights(model_file)

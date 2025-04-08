@@ -5,6 +5,10 @@ from datetime import datetime
 import pandas as pd
 from typing import *
 import shutil
+from scipy.interpolate import interp1d
+import seaborn as sns
+
+from concat import df_append
 
 second_plot = True
 print(f"Current working directory: {os.getcwd()}")
@@ -12,24 +16,32 @@ print(f"Current working directory: {os.getcwd()}")
 def get_color(name: str):
     if 'LF_HS' in name:
         if 'prob' in name:
-            return 'maroon'
+            return 'red'
         elif 'raw' in name:
             return 'red'
     elif 'LF_TO' in name:
         if 'prob' in name:
-            return 'olive'
+            return 'cyan'
         elif 'raw' in name:
-            return 'yellowgreen'
+            return 'cyan'
     elif 'RF_HS' in name:
         if 'prob' in name:
-            return 'blue'
+            return 'deeppink'
         elif 'raw' in name:
-            return 'royalblue'
+            return 'deeppink'
     elif 'RF_TO' in name:
         if 'prob' in name:
             return 'darkviolet'
         elif 'raw' in name:
-            return 'mediumpurple'
+            return 'darkviolet'
+
+    if 'acc_x' in name:
+        return 'royalblue'
+    if 'acc_y' in name:
+        return 'darkorange'
+    if 'acc_z' in name:
+        return 'green'
+
 
 def plot_results(x: pd.DataFrame, start: Optional[int] = None, length: Optional[int] = None,
                  show_events: bool = False, show_phases: bool = False,
@@ -88,6 +100,111 @@ def plot_results(x: pd.DataFrame, start: Optional[int] = None, length: Optional[
 
     plt.legend()
     filepath = os.path.join(figpath, turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
+    plt.savefig(filepath, format="png", bbox_inches="tight")
+    plt.close()
+
+
+def plot_cycle(x: pd.DataFrame, show_events: bool = False, show_phases: bool = False,
+                 turn: Optional = None, raw: bool = False, real: bool = False,
+                 figpath: Optional[str] = None, feature_hue: bool = False, events_hue: bool = False):
+    length = 100
+
+    if figpath is None:
+        figpath = os.path.join('archive', 'figures')
+
+    if turn is not None:
+        turn = str(turn)
+    else:
+        turn = ''
+
+    feature_cols = x.columns[x.columns.str.contains('acc')]
+    events_cols = x.columns[x.columns.str.contains('HS|TO')]
+    phases_cols = x.columns[x.columns.str.contains('stance')]
+
+    cycles = [cycle for _, cycle in x.groupby('cycle')]
+
+    sgn_cycles = None
+    evs_cycles = None
+    phases_cycles = np.zeros((len(cycles), length, len(phases_cols)))
+
+    for c, cycle in enumerate(cycles):
+        if cycle[events_cols].isnull().values.sum() > 0:
+            continue
+
+        old_t = cycle.reset_index().index
+        new_t = np.linspace(start=old_t[0], stop=old_t[-1], num=length)
+
+        old_sgn = cycle[feature_cols].values
+        new_sgn = interp1d(old_t, old_sgn, kind='linear', axis=0, fill_value='extrapolate')(new_t)
+        sgn_cycle = pd.DataFrame(new_sgn, columns=feature_cols)
+        sgn_cycle['timestamp'] = np.arange(length)
+        sgn_cycle['cycle'] = c
+
+        sgn_cycles = df_append(sgn_cycles, sgn_cycle)
+
+        if show_events:
+            old_events = cycle[events_cols].values
+            new_events = interp1d(old_t, old_events, kind='linear', axis=0, fill_value='extrapolate')(new_t)
+            evs_cycle = pd.DataFrame(new_events, columns=events_cols) * 10
+            evs_cycle['timestamp'] = np.arange(length)
+            evs_cycle['cycle'] = c
+
+            evs_cycles = df_append(evs_cycles, evs_cycle)
+
+        if show_phases:
+            pass
+
+    if show_events:
+        evs = np.mean(evs_cycles, axis=0)
+
+    if show_phases:
+        phases = np.mean(phases_cycles, axis=0)
+
+    fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
+
+    for f, feature in enumerate(feature_cols):
+        if feature_hue:
+            sns.lineplot(data=sgn_cycles, x='timestamp', y=feature, hue='cycle', ax=axs, legend=False, alpha=0.15,
+                         palette=sns.color_palette([get_color(feature)], len(sgn_cycles['cycle'].unique())))
+
+        else:
+            sns.lineplot(data=sgn_cycles, x='timestamp', y=feature, ax=axs, label=feature, color=get_color(feature),
+                         errorbar = lambda x: (np.mean(x) - 1 * np.std(x), np.mean(x) + 1 * np.std(x)))
+
+    if show_events:
+
+        for event in events_cols:
+            if 'prob' in event:
+                if events_hue:
+                    sns.lineplot(data=evs_cycles, x='timestamp', y=event, hue='cycle', ax=axs, legend=False,
+                                 palette=sns.color_palette([get_color(event)], len(sgn_cycles['cycle'].unique())),
+                                 alpha=0.15)
+
+                else:
+                    sns.lineplot(data=evs_cycles, x='timestamp', y=event, ax=axs, color=get_color(event), legend=False)
+
+            elif 'raw' in event and raw:
+                event_values = evs_cycles.groupby('timestamp').mean()[event].values
+                peak_ix = np.argmax(event_values)
+                std = np.std(event_values)
+
+                axs.vlines(peak_ix, 0, 1, transform=axs.get_xaxis_transform(),
+                           linewidth=2, linestyle='solid', label=event, colors=get_color(event))
+
+                axs.vlines(peak_ix + std, 0, 1, transform=axs.get_xaxis_transform(),
+                           linewidth=2, linestyle='dashed', colors=get_color(event))
+
+                axs.vlines(peak_ix - std, 0, 1, transform=axs.get_xaxis_transform(),
+                           linewidth=2, linestyle='dashed', colors=get_color(event))
+
+            elif 'real' in event and real:
+                sns.lineplot(data=evs_cycles, x='timestamp', y=event, ax=axs, label=event)
+
+    if show_phases:
+        pass
+
+    plt.legend()
+    filepath = os.path.join(figpath, turn + '-' + 'cycle.png')
     plt.savefig(filepath, format="png", bbox_inches="tight")
     plt.close()
 

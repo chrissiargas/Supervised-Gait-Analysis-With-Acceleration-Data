@@ -18,7 +18,7 @@ main_args:
   filter_cutoff: 10.0
 
   labels:
-  - LF_HS
+  - RF_TO
   task: gait_events
   targets: all
   target_position: center

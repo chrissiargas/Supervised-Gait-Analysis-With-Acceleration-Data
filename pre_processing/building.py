@@ -339,12 +339,13 @@ class builder:
 
         return yy_
 
-    def get_data(self, subjects: List[int],
-                 activities: Optional[List[int]] = None,
+    def get_data(self, subjects_: List[int],
+                 activities_: Optional[List[int]] = None,
                  rotation: Optional[np.ndarray] = None,
                  oversample: bool = False) -> Tuple[Dict, Dict]:
-        self.load_data(subjects)
-        data = self.prepare(subjects)
+        self.load_data(subjects_)
+        data = self.prepare(subjects_)
+        pd.set_option('display.max_columns', None)
 
         df = {}
         windows = {}
@@ -355,7 +356,7 @@ class builder:
             windows[subject] = {}
 
             sub_data = data[data['subject_id'] == subject]
-            activities = activities if activities else sub_data['activity_id'].unique()
+            activities = activities_ if activities_ else sub_data['activity_id'].unique()
             for activity in activities:
                 act_data = sub_data[sub_data['activity_id'] == activity]
 
