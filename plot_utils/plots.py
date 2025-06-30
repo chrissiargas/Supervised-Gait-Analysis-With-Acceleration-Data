@@ -7,6 +7,7 @@ from typing import *
 import shutil
 from scipy.interpolate import interp1d
 import seaborn as sns
+from scipy.spatial.transform import Rotation
 
 from concat import df_append
 
@@ -19,20 +20,28 @@ def get_color(name: str):
             return 'red'
         elif 'raw' in name:
             return 'red'
+        else:
+            return 'red'
     elif 'LF_TO' in name:
         if 'prob' in name:
             return 'cyan'
         elif 'raw' in name:
+            return 'cyan'
+        else:
             return 'cyan'
     elif 'RF_HS' in name:
         if 'prob' in name:
             return 'deeppink'
         elif 'raw' in name:
             return 'deeppink'
+        else:
+            return 'deeppink'
     elif 'RF_TO' in name:
         if 'prob' in name:
             return 'darkviolet'
         elif 'raw' in name:
+            return 'darkviolet'
+        else:
             return 'darkviolet'
 
     if 'acc_x' in name:
@@ -42,11 +51,63 @@ def get_color(name: str):
     if 'acc_z' in name:
         return 'green'
 
+def plot_cummulative(dist_stats: Dict, return_plot: bool = False):
+    fig, axs = plt.subplots(2, 2, figsize=(20, 15))
+    fig.suptitle('Scores vs. Distance Error', fontsize=16)
+    events = list(dist_stats.keys())
+
+    # Plot metrics for each event
+    for i, event in enumerate(events):
+        ax = axs[i // 2, i % 2]  # Determine subplot position
+        event_stats = dist_stats[event]
+
+        # Extract metrics in distance order
+        distances = sorted(event_stats.keys())
+        f1_scores = [event_stats[d]['f1 score'] for d in distances]
+        precisions = [event_stats[d]['precision'] for d in distances]
+        recalls = [event_stats[d]['recall'] for d in distances]  # Note: check if your key is 'recall' or 'recall'
+
+        # Plot lines
+        ax.plot(distances, f1_scores, 'o-', label='F1-score', color='blue')
+        ax.plot(distances, precisions, 's-', label='Precision', color='red')
+        ax.plot(distances, recalls, 'd-', label='Recall', color='green')
+
+        # Add milliseconds conversion on top axis
+        ax2 = ax.twiny()
+        ax2.set_xlim(ax.get_xlim())
+        ax2.set_xticks(distances)
+        ax2.set_xticklabels([f'{d * 20}' for d in distances])
+        ax2.set_xlabel('Time Error (ms)', labelpad=10)
+        ax2.xaxis.set_ticks_position('bottom')
+        ax2.xaxis.set_label_position('bottom')
+        ax2.spines['bottom'].set_position(('outward', 40))
+
+        # Customize subplot
+        ax.set_title(f'{event} Event', fontsize=14)
+        ax.set_xlabel('Distance Error (frames)', fontsize=12)
+        ax.set_ylabel('Score', fontsize=12)
+        ax.set_ylim(0, 1.05)
+        ax.set_xlim(-0.5, 10.5)
+        ax.grid(alpha=0.4, linestyle='--')
+        ax.legend(loc='lower right')
+
+        # Add conversion note
+        ax.text(0.98, 0.02, '1 frame = 20ms',
+                transform=ax.transAxes, ha='right', va='bottom',
+                fontsize=10, bbox=dict(facecolor='white', alpha=0.8))
+
+    plt.tight_layout()  # Adjust layout
+
+    plt.legend()
+
+    if return_plot:
+        return fig
+
 
 def plot_results(x: pd.DataFrame, start: Optional[int] = None, length: Optional[int] = None,
                  show_events: bool = False, show_phases: bool = False,
                  turn: Optional = None, raw: bool = False, real: bool = False, signal: bool = False,
-                 figpath: Optional[str] = None):
+                 figpath: Optional[str] = None, return_plot: bool = False):
 
     if figpath is None:
         figpath = os.path.join('archive', 'figures')
@@ -99,14 +160,20 @@ def plot_results(x: pd.DataFrame, start: Optional[int] = None, length: Optional[
         pass
 
     plt.legend()
-    filepath = os.path.join(figpath, turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
-    plt.savefig(filepath, format="png", bbox_inches="tight")
+
+    if return_plot:
+        return fig
+    else:
+        filepath = os.path.join(figpath, turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f") + ".png")
+        plt.savefig(filepath, format="png", bbox_inches="tight")
+
     plt.close()
 
 
 def plot_cycle(x: pd.DataFrame, show_events: bool = False, show_phases: bool = False,
-                 turn: Optional = None, raw: bool = False, real: bool = False,
-                 figpath: Optional[str] = None, feature_hue: bool = False, events_hue: bool = False):
+               turn: Optional = None, raw: bool = False, real: bool = False,
+               figpath: Optional[str] = None, feature_hue: bool = False,
+               events_hue: bool = False, return_plot: bool = False):
     length = 100
 
     if figpath is None:
@@ -204,12 +271,17 @@ def plot_cycle(x: pd.DataFrame, show_events: bool = False, show_phases: bool = F
         pass
 
     plt.legend()
-    filepath = os.path.join(figpath, turn + '-' + 'cycle.png')
-    plt.savefig(filepath, format="png", bbox_inches="tight")
+
+    if return_plot:
+        return fig
+    else:
+        filepath = os.path.join(figpath, turn + '-' + 'cycle.png')
+        plt.savefig(filepath, format="png", bbox_inches="tight")
+
     plt.close()
 
 
-def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
+def plot_signal(x: pd.DataFrame, pos: Optional[str] = None, dataset: Optional[str] = None,
                 subject: Optional[int] = None, activity: Optional[int] = None,
                 mode: Optional[str] = None, population: Optional[str] = None,
                 start: Optional[int] = None, length: Optional[int] = None,
@@ -240,16 +312,33 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
     else:
         turn = ''
 
-    positions = pd.unique(x['position'])
     features = x.columns[x.columns.str.contains(features)]
+
+    if 'position' in x.columns:
+        positions = pd.unique(x['position'])
+        has_pos_col = True
+    else:
+        acc_features = x.columns[x.columns.str.contains('acc')]
+        positions = set(acc_features.str.split('_').str[2])
+        has_pos_col = False
+
     events_cols = x.columns[x.columns.str.contains('HS|TO')]
     phases_cols = x.columns[x.columns.str.contains('stance')]
 
-    if pos in positions:
-        x = x[x['position'] == pos]
+    if pos is not None and pos in positions:
+        positions = [pos]
+
+    fig, axs = plt.subplots(len(positions), sharex=True, figsize=(10, 8))
+
+    for p, position in enumerate(positions):
+        if has_pos_col:
+            pos_features = features
+            sig = x[x['position'] == position].values
+        else:
+            pos_features = features[features.str.contains(position)]
+            sig = x[pos_features]
 
         t = x['timestamp'].values
-        sig = x[features].values
         evs = x[events_cols].values
         phases = x[phases_cols].values
 
@@ -260,16 +349,22 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
             evs = evs[start: start + length]
             phases = phases[start: start + length] * 10
 
+            # if subject in [2001, 2002, 2010]:
+            #     print('a')
+            #     Rot = [[-1, 0, 0],
+            #            [0, 1, 0],
+            #            [0, 0, 1]]
+            #     sig = Rotation.from_matrix(Rot).apply(sig)
+
             if sign:
                 sig = np.sign(np.mean(sig, axis=0)) * sig
 
-        fig, axs = plt.subplots(1, sharex=True, figsize=(40, 15))
-        axs.plot( t, sig, linewidth=1, label=features)
+        axs[p].plot(t, sig, linewidth=1, label=pos_features)
 
         if show_events:
             for ev, name in zip(evs.transpose(), events_cols):
                 if 'prob' in name:
-                    axs.plot(t, ev * 10., linewidth=2, linestyle='solid', label=name)
+                    axs[p].plot(t, ev * 10., linewidth=2, linestyle='solid', label=name)
                     continue
 
                 elif 'pred' in name:
@@ -277,29 +372,29 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
 
                 elif 'raw' in name and raw:
                     ev_ixs = np.where(ev == 1)
-                    axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
-                               linewidth=1, linestyle='solid', label=name)
+                    axs[p].vlines(t[ev_ixs], 0, 1, transform=axs[p].get_xaxis_transform(),
+                               linewidth=1, linestyle='solid', colors=get_color(name), label=name)
 
                 elif 'real' in name and real:
-                    axs.plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
+                    axs[p].plot(t, ev * 10., linewidth=2, linestyle='dashed', label=name)
                     continue
 
                 else:
                     ev_ixs = np.where(ev == 1)
-                    axs.vlines(t[ev_ixs], 0, 1, transform=axs.get_xaxis_transform(),
-                               linewidth=1, linestyle='solid', label=name)
-
+                    axs[p].vlines(t[ev_ixs], 0, 1, transform=axs[p].get_xaxis_transform(),
+                               linewidth=1, linestyle='solid', colors=get_color(name), label=name)
+                    axs[p].legend(loc="upper right")
 
         elif show_phases:
             for phase, name in zip(phases.transpose(), phases_cols):
                 if 'prob' in name:
-                    axs.plot(t, phase, linewidth=2, linestyle='solid', label=name)
+                    axs[p].plot(t, phase, linewidth=2, linestyle='solid', label=name)
 
                 elif 'pred' in name:
-                    axs.plot(t, phase, linewidth=2, linestyle='solid', label=name)
+                    axs[p].plot(t, phase, linewidth=2, linestyle='solid', label=name)
 
                 else:
-                    axs.plot(t, phase, linewidth=2, linestyle='dashed', label=name)
+                    axs[p].plot(t, phase, linewidth=2, linestyle='dashed', label=name)
 
         if R is not None:
             table = axs.table(
@@ -314,10 +409,10 @@ def plot_signal(x: pd.DataFrame, pos: str, dataset: Optional[str] = None,
             table.scale(1, 2)
             axs.axis('off')
 
-        plt.legend()
-        filepath = os.path.join(figpath, str(subject) + '-' + turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
-        plt.savefig(filepath, format="png", bbox_inches="tight")
-        plt.close()
+    plt.legend()
+    filepath = os.path.join(figpath, str(subject) + '-' + turn + '-' + datetime.now().strftime("%Y%m%d-%H%M%S-%f")+".png")
+    plt.savefig(filepath, format="png", bbox_inches="tight")
+    plt.close()
 
 def plot_parameters(x: pd.DataFrame, pos: str, subject: int = 5, activity: int = 0,
                     start: Optional[int] = None, length: Optional[int] = None,

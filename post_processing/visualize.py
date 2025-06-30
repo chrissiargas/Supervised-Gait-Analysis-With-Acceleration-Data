@@ -4,11 +4,11 @@ import pprint
 import pandas as pd
 
 from config.config_parser import Parser
-from model_utils.supervised import alligaitor
+from model_utils.supervised import sl_model
 from post_processing.analytics import get_conf, get_time_error, get_scores, get_parameters
 from post_processing.analytics_plots import plot_events, plot_parameters, plot_confusion
 from post_processing.results import reconstruct_y
-from pre_processing.building import builder
+from pre_processing.building import sl_builder
 from plot_utils.plots import plot_signal, plot_results, plot_cycle
 from typing import Optional, List
 import numpy as np
@@ -21,7 +21,6 @@ import shutil
 warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['PTXAS_OPTIONS'] = '-w'
-
 
 def get_subject_path(figpath, subject_id: int, delete: bool):
     path = os.path.join(figpath, f'subject_{subject_id}')
@@ -41,7 +40,7 @@ def visualize(path: Optional[str] = None,
               set: str = 'test',
               subject: Optional[int] = None,
               activity: int = 3):
-    data = builder()
+    data = sl_builder()
     data()
 
     config = Parser()
@@ -52,7 +51,7 @@ def visualize(path: Optional[str] = None,
     model_file = '%s.weights.h5' % config.architecture
     model_file = f'{model_dir}/{model_file}'
 
-    model = alligaitor(data)
+    model = sl_model(data)
     model.compile()
     model.build_model(data.input_shape)
     model.load_weights(model_file)
@@ -77,7 +76,7 @@ def visualize_rot(path: Optional[str] = None,
                   subject: Optional[int] = None,
                   activity: int = 3):
 
-    data = builder()
+    data = sl_builder()
     data()
 
     config = Parser()
@@ -87,7 +86,7 @@ def visualize_rot(path: Optional[str] = None,
     model_file = '%s.weights.h5' % config.architecture
     model_file = f'{model_dir}/{model_file}'
 
-    model = alligaitor(data)
+    model = sl_model(data)
     model.compile()
     model.build_model(data.input_shape)
     model.load_weights(model_file)
@@ -277,4 +276,4 @@ def plot_all(subjects: Optional[List[int]] = None,
                                        figpath=path)
 
 if __name__ == '__main__':
-    plot_all(subjects=[2001, 2002, 2003, 2004, 2005], activities=None, separate=True)
+    plot_all(subjects=[2,3,6], activities=None, separate=True)

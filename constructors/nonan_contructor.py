@@ -21,7 +21,7 @@ def get_imu_features(from_sensor: str, to_sensor: str, side: str) -> Dict:
 class nonan:
     def __init__(self, delete: bool = False):
         self.source_path = os.path.join(
-            os.path.expanduser('~'),
+            '/media/crizo/X9 Pro/',
             'datasets',
             'NONAN'
         )
@@ -43,8 +43,8 @@ class nonan:
 
         self.imu_LH = get_imu_features('Forearm', 'LH', 'LT')
         self.imu_RH = get_imu_features('Forearm', 'RH', 'RT')
-        self.imu_LF = get_imu_features('Foot', 'LF', 'LT')
-        self.imu_RF = get_imu_features('Foot', 'RF', 'RT')
+        self.imu_LF = get_imu_features('Shank', 'LF', 'LT')
+        self.imu_RF = get_imu_features('Shank', 'RF', 'RT')
 
         self.foot_events = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO']
 

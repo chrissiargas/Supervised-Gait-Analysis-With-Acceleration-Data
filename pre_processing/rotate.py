@@ -14,8 +14,7 @@ def get_grav_comps(x: pd.DataFrame, fs: float) -> np.ndarray:
         axis=0, arr=x)
     return g
 
-def rotate_by_gravity(x: pd.DataFrame, fs: float, grav_axis: str = 'x') -> np.ndarray:
-    features = x.columns[x.columns.str.contains('acc')]
+def rotate_by_gravity(x: pd.DataFrame, features: pd.Index, fs: float, grav_axis: str = 'x') -> np.ndarray:
     g_comps = get_grav_comps(x[features], fs)
     g_comps = g_comps[~x.irregular.astype(bool)]
 
@@ -45,8 +44,7 @@ def rotate_by_gravity(x: pd.DataFrame, fs: float, grav_axis: str = 'x') -> np.nd
 
     return acc
 
-def rotate_by_pca(x: pd.DataFrame, around: str = 'x') -> np.ndarray:
-    features = x.columns[x.columns.str.contains('acc')]
+def rotate_by_pca(x: pd.DataFrame, features: pd.Index, around: str = 'x') -> np.ndarray:
     acc = x.loc[~x.irregular.astype(bool), features].values
 
     if around == 'x':

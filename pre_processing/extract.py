@@ -6,10 +6,30 @@ from pre_processing.resampling import resample
 import numpy as np
 from config.config_parser import Parser
 from pre_processing.info import info
-from typing import Optional
+from typing import Optional, Tuple
 from typing import List
 from scipy.spatial.transform import Rotation
 from rotation_utils import inv_calibrate
+
+id_cols = [
+    'subject',
+    'activity',
+    'time'
+]
+
+label_cols = ['LF_HS', 'RF_HS', 'LF_TO', 'RF_TO', 'LF_stance', 'RF_stance', 'mode']
+
+def split_with_id(df: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    df = df.copy()
+
+    df['id'] = df[id_cols].astype(str).agg('-'.join, axis=1)
+    res_cols = df.columns[df.columns.str.contains('acc|NaN')]
+    data_cols = df.columns[~df.columns.str.contains('acc|NaN')]
+    data_df = df[data_cols]
+    res_df = df[['id', *res_cols]]
+
+    return res_df, data_df
+
 
 def add_phase(timeseries: pd.DataFrame, event1: str, event2: str) -> np.ndarray:
     event1_indices = np.where(timeseries[event1] == 1)[0]
@@ -53,7 +73,7 @@ def convert_activity(x: pd.DataFrame, initial_acts: List[str]) -> pd.DataFrame:
     return x
 
 class extractor:
-    def __init__(self, dataset: str):
+    def __init__(self, dataset: str, experiment: str):
         self.sub_offset = 0
 
         config = Parser()
@@ -61,6 +81,7 @@ class extractor:
         self.conf = config
 
         self.dataset = dataset
+        self.experiment = experiment
 
         self.path = os.path.join(
             os.path.expanduser('~'),
@@ -88,6 +109,40 @@ class extractor:
             self.mmgait_extract()
             self.sub_offset += 1000
 
+    def get_ds(self, sub_path: str, dataset: str, position: str, sub_id: Optional[int] = None) -> pd.DataFrame:
+        if dataset == 'marea':
+            df = self.marea_load_subject(sub_path, sub_id, position)
+        elif dataset == 'nonan':
+            df = self.nonan_load_subject(sub_path, position)
+        elif dataset == 'mmgait':
+            df = self.mmgait_load_subject(sub_path, position)
+
+        return df
+
+    def get_subject(self, sub_path: str, dataset: str, sub_id: Optional[int] = None) -> pd.DataFrame:
+        if self.experiment == 'supervised':
+            sub_df = self.get_ds(sub_path, dataset, self.conf.position, sub_id)
+
+        elif self.experiment == 'self_supervised':
+            sub_df = None
+            for position in self.conf.position:
+                pos_df = self.get_ds(sub_path, dataset, position, sub_id)
+                pos_df = pos_df.rename(columns={ft: ft + '_' + position for ft in self.info.imu_features.values()})
+                pos_df = pos_df.rename(columns={'is_NaN': 'is_NaN' + '_' + position})
+                pos_df = pos_df.drop(columns=['position'])
+
+                pos_df, same = split_with_id(pos_df)
+
+                if sub_df is None:
+                    sub_df = pos_df
+                else:
+                    sub_df = pd.merge(sub_df, pos_df, on='id', how='left')
+
+            sub_df = pd.merge(sub_df, same, on='id', how='left')
+            sub_df = sub_df.drop(columns=['id'])
+
+        return sub_df
+
     def mmgait_extract(self):
         print(f'Loading MM-Gait data...')
 
@@ -98,7 +153,7 @@ class extractor:
 
             sub_id = int(sub_file[2:-4]) + self.sub_offset
             sub_path = os.path.join(self.info.path, sub_file)
-            sub_df = self.mmgait_load_subject(sub_path)
+            sub_df = self.get_subject(sub_path, 'mmgait')
             sub_df = sub_df.sort_values(by=['activity', 'time'])
             sub_df.insert(0, 'dataset', 'mmgait')
 
@@ -107,9 +162,8 @@ class extractor:
 
             del sub_df
 
-    def mmgait_load_subject(self, path: str) -> pd.DataFrame:
+    def mmgait_load_subject(self, path: str, position: str) -> pd.DataFrame:
         df = pd.read_csv(path)
-        position = self.conf.position
 
         if position == 'Wrist':
             position = 'LH'
@@ -141,7 +195,8 @@ class extractor:
 
         acc_features = list(self.info.imu_features.values())
         a = df[acc_features].values
-        a_rot = Rotation.from_matrix(self.info.rotation).apply(a)
+        R = self.info.rotation[position]
+        a_rot = Rotation.from_matrix(R).apply(a)
         df[acc_features] = a_rot
 
         return df
@@ -166,7 +221,7 @@ class extractor:
 
             sub_id = int(sub_file[1:-4]) + self.sub_offset
             sub_path = os.path.join(population_path, sub_file)
-            sub_df = self.nonan_load_subject(sub_path)
+            sub_df = self.get_subject(sub_path, 'nonan')
             sub_df = sub_df.sort_values(by=['activity', 'time'])
 
             sub_df.insert(0, 'population', population)
@@ -178,9 +233,8 @@ class extractor:
             del sub_df
 
 
-    def nonan_load_subject(self, path) -> pd.DataFrame:
+    def nonan_load_subject(self, path, position: str) -> pd.DataFrame:
         df = pd.read_csv(path)
-        position = self.conf.position
 
         if position == 'Wrist':
             position = 'LH'
@@ -190,8 +244,8 @@ class extractor:
         df = df[columns]
 
         df = df.reset_index()
-        df['position'] = self.conf.position
-        df.columns = df.columns.str.replace('_' + self.conf.position, '')
+        df['position'] = position
+        df.columns = df.columns.str.replace('_' + position, '')
 
         df = df.rename(columns=self.info.imu_features)
 
@@ -220,7 +274,7 @@ class extractor:
 
             sub_id = int(sub_file[4:-4]) + self.sub_offset
             sub_path = os.path.join(self.info.path, sub_file)
-            sub_df = self.marea_load_subject(sub_path, sub_id)
+            sub_df = self.get_subject(sub_path, 'marea', sub_id)
             sub_df = sub_df.sort_values(by=['activity', 'time'])
             sub_df.insert(0, 'dataset', 'marea')
 
@@ -229,14 +283,13 @@ class extractor:
 
             del sub_df
 
-    def marea_load_subject(self, path, sub_id: int) -> pd.DataFrame:
+    def marea_load_subject(self, path, sub_id: int, position: str) -> pd.DataFrame:
         df = pd.read_csv(path)
 
         initial_activities = [
             "treadmill_walk", "treadmill_walknrun", "treadmill_slope_walk",
             "indoor_walk", "indoor_walknrun", "outdoor_walk", "outdoor_walknrun"
         ]
-        position = self.conf.position
 
         if position == 'LH':
             position = 'Wrist'
@@ -280,11 +333,21 @@ class extractor:
         a = df[acc_features].values
 
         if df['acc_y'].mean() > 0:
-            R = self.info.y_pos_rotation
+            R = self.info.y_pos_rotation[position]
         elif df['acc_y'].mean() < 0:
-            R = self.info.y_neg_rotation
+            R = self.info.y_neg_rotation[position]
 
         a_rot = Rotation.from_matrix(R).apply(a)
         df[acc_features] = a_rot
 
         return df
+
+import warnings
+
+warnings.filterwarnings('ignore')
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['PTXAS_OPTIONS'] = '-w'
+
+if __name__ == '__main__':
+    extract_data = extractor('MMgait', 'self_supervised')
+    extract_data()

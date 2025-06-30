@@ -3,8 +3,9 @@ data_args:
   fs: 50
   activities:
   - walk
-  position: LH
-  dataset: marea-nonan-MMgait
+  position: RH
+  dataset: nonan-MMgait
+
 main_args:
   load_data: false
 
@@ -24,30 +25,47 @@ main_args:
   target_position: center
   target_oversampling: 2
 
-  split_type: dataset
-  test_hold_out: mmgait
-  validation: false
-  val_hold_out: mmgait
-  duration: 4
-  stride: 4
+  split_type: loso
+  test_hold_out:
+  - 1001
+  - 1022
+  - 1010
+  - 1013
+  validation: true
+  val_hold_out:
+  - 1018
+  - 1014
+  - 1002
+  - 1025
+  duration: 2.56
+  stride: 2
 
   features:
   - acc_x
   - acc_y
   - acc_z
-  xyz: true
+  xyz: false
 
-  batch_size: 128
   augmentations:
-  architecture: cnn-gru
+  architecture: unet
   rotation_layer:
   optimizer: adam
   epochs: 250
   learning_rate: 0.0001
-  head: temporal_single
+  head: temporal
   class_weights: true
-  loss: tversky
+  loss: bce
   metric: accuracy
+
+  anchor: LH
+  target: LF
+  batch_method: random
+  batch_size: 64
+  negative_subject: same
+  negative_position: all
+
+
+
 
 
 

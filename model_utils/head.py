@@ -90,4 +90,25 @@ class temporal_head(Layer):
 
     def call(self, inputs):
         y = self.head_net(inputs)
+
         return y
+
+class projector_head(Layer):
+    def __init__(self,  n_units: int, hidden_units = []):
+        super().__init__()
+
+        layers = []
+
+        layers.append(Flatten())
+        for hidden_unit in hidden_units:
+            layers.append(Dense(hidden_unit, kernel_initializer=initializers.he_normal()))
+            layers.append(ReLU())
+
+        layers.append(Dense(n_units, kernel_initializer=initializers.glorot_normal()))
+
+        self.projector = Sequential(layers)
+
+    def call(self, inputs):
+        embedding = self.projector(inputs)
+        return embedding
+

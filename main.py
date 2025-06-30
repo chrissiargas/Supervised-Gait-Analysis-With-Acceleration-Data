@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore')
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 os.environ['PTXAS_OPTIONS'] = '-w'
 
-from experiments import *
+from experiments import supervised, self_supervised
 import tensorflow as tf
 import logging
 
@@ -28,6 +28,9 @@ def main():
     experiment = 'supervised'
     if experiment == 'supervised':
         supervised()
+
+    elif experiment == 'self-supervised':
+        self_supervised()
 
 if __name__ == '__main__':
     main()

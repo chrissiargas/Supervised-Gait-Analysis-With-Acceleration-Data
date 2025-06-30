@@ -6,7 +6,7 @@ import os
 from typing import Optional, Dict
 from sklearn.metrics import confusion_matrix
 
-def plot_events(HS_error, TO_error, path: str):
+def plot_events(HS_error, TO_error, path: Optional[str] = None, return_plot: bool = False):
     cm = 1 / 2.54
 
     hs_cols = ['LF_HS', 'RF_HS']
@@ -37,9 +37,14 @@ def plot_events(HS_error, TO_error, path: str):
     axs[1].tick_params(axis="x", which="both", length=0)
 
     plt.tight_layout()
-    filepath = os.path.join(path, 'event_metrics' + ".png")
-    plt.savefig(filepath, format="png", bbox_inches="tight")
-    plt.close()
+
+    if return_plot:
+        return fig
+
+    else:
+        filepath = os.path.join(path, 'event_metrics' + ".png")
+        plt.savefig(filepath, format="png", bbox_inches="tight")
+        plt.close()
 
 def bland_altman_plot(m1, m2, sd_limit=1.96, ax=None, annotate=True,
                         scatter_kwds=None, mean_line_kwds=None, limit_lines_kwds=None):

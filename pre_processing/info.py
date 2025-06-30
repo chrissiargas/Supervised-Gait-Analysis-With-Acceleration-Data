@@ -52,8 +52,13 @@ class info:
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
 
-            self.y_pos_rotation = [[0, 1, 0], [-1, 0, 0], [0, 0, 1]]
-            self.y_neg_rotation = [[0, -1, 0], [1, 0, 0], [0, 0, 1]]
+            self.y_pos_rotation = {'Wrist': [[0, 1, 0], [-1, 0, 0], [0, 0, 1]],
+                                   'LF': [[0, 1, 0], [0, 0, -1], [-1, 0, 0]],
+                                   'RF': [[1, 0, 0], [0, 1, 0], [0, 0, 1]]}
+
+            self.y_neg_rotation = {'Wrist': [[0, -1, 0], [1, 0, 0], [0, 0, 1]],
+                                   'LF': [[0, -1, 0], [0, 0, -1], [1, 0, 0]],
+                                   'RF': [[1, 0, 0], [0, 1, 0], [0, 0, 1]]}
 
         if dataset == 'nonan':
             self.path = os.path.join(
@@ -86,7 +91,12 @@ class info:
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
 
-            self.rotation = [[1, 0, 0], [0, 1, 0], [0, 0, 1]]
+            self.rotation = {'LH': [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                             'LF': [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                             'RH': [[1, 0, 0], [0, 1, 0], [0, 0, 1]],
+                             'RF': [[1, 0, 0], [0, 1, 0], [0, 0, 1]]}
+
+
 
         if dataset == 'MMgait':
             self.path = os.path.join(
@@ -118,7 +128,10 @@ class info:
                                 "accY": "acc_y",
                                 "accZ": "acc_z"}
 
-            self.rotation = [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]
+            self.rotation = {'LH': [[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                             'LF': [[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                             'RH': [[-1, 0, 0], [0, -1, 0], [0, 0, 1]],
+                             'RF': [[-1, 0, 0], [0, -1, 0], [0, 0, 1]]}
 
         if dataset == 'synthetic':
             self.pos_pairs = {

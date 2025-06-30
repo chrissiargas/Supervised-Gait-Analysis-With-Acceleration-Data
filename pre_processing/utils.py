@@ -102,13 +102,20 @@ def is_irregular(x: pd.DataFrame, period: int, checks: List[str]) -> pd.DataFram
 
 def orient(x: pd.DataFrame,
            fs: float,
-           how: Optional[str] = None) -> pd.DataFrame:
+           how: Optional[str] = None,
+           placement: bool = False) -> pd.DataFrame:
     if how is None:
         return x
 
     x = x.copy()
 
     features = x.columns[x.columns.str.contains('acc')]
+
+    if placement:
+        positions = list(set(features.str.split('_').str[2]))
+    else:
+        positions = ['']
+
     groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
 
     period_id = groups.apply(lambda g: get_period_id(g, period=2000))
@@ -116,13 +123,16 @@ def orient(x: pd.DataFrame,
 
     groups = x.groupby(['dataset', 'subject_id', 'activity_id', 'rotation_period'])
 
-    if 'gravity' in how:
-        rotated = groups.apply(lambda gr: rotate_by_gravity(gr, fs))
-        x[features] = np.concatenate(rotated.values)
+    for position in positions:
+        pos_features = features[features.str.contains(position)]
 
-    if 'pca' in how:
-        rotated = groups.apply(lambda gr: rotate_by_pca(gr))
-        x[features] = np.concatenate(rotated.values)
+        if 'gravity' in how:
+            rotated = groups.apply(lambda gr: rotate_by_gravity(gr, pos_features, fs))
+            x[pos_features] = np.concatenate(rotated.values)
+
+        if 'pca' in how:
+            rotated = groups.apply(lambda gr: rotate_by_pca(gr, pos_features))
+            x[pos_features] = np.concatenate(rotated.values)
 
     x = x.drop(columns=['rotation_period'])
 
@@ -143,38 +153,45 @@ def remove_g(x: pd.DataFrame, fs: int, include_g:bool, g_cutoff: float, how: str
 
     return x
 
-def produce(x: pd.DataFrame, features: List[str], fs: int) -> pd.DataFrame:
+def produce(x: pd.DataFrame, features: List[str], placement: bool = False) -> pd.DataFrame:
     if features is None:
         return x
 
     x = x.copy()
 
-    if 'norm_xyz' in features:
-        x = add_norm_xyz(x)
+    if placement:
+        acc_features = x.columns[x.columns.str.contains('acc')]
+        positions = list(set(acc_features.str.split('_').str[2]))
+    else:
+        positions = [None]
 
-    if 'norm_xy' in features:
-        x = add_norm_xy(x)
+    for position in positions:
+        if 'norm_xyz' in features:
+            x = add_norm_xyz(x, position)
 
-    if 'norm_xz' in features:
-        x = add_norm_xz(x)
+        if 'norm_xy' in features:
+            x = add_norm_xy(x, position)
 
-    if 'norm_yz' in features:
-        x = add_norm_yz(x)
+        if 'norm_xz' in features:
+            x = add_norm_xz(x, position)
 
-    if 'jerk' in features:
-        x = add_jerk(x)
+        if 'norm_yz' in features:
+            x = add_norm_yz(x, position)
 
-    if 'y_x_angle' in features:
-        x = add_angle_y_x(x)
+        if 'jerk' in features:
+            x = add_jerk(x, position)
 
-    if 'z_xy_angle' in features:
-        x = add_angle_z_xy(x)
+        if 'y_x_angle' in features:
+            x = add_angle_y_x(x, position)
 
-    if 'y_xz_angle' in features:
-        x = add_angle_y_xz(x)
+        if 'z_xy_angle' in features:
+            x = add_angle_z_xy(x, position)
 
-    if 'x_yz_angle' in features:
-        x = add_angle_x_yz(x)
+        if 'y_xz_angle' in features:
+            x = add_angle_y_xz(x, position)
+
+        if 'x_yz_angle' in features:
+            x = add_angle_x_yz(x, position)
 
     return x
 
@@ -236,7 +253,6 @@ def augment(S: Tuple[np.ndarray, np.ndarray, np.ndarray], augmentations: List[st
             vrandom_rotate = np.vectorize(lambda w: random_rotate(w, around='x'), signature='(n,c)->(m,k)')
             X_aug[..., xyz_channels] = vrandom_rotate(xyz)
 
-
     S = X_aug, Y, T
 
     return S
@@ -244,7 +260,6 @@ def augment(S: Tuple[np.ndarray, np.ndarray, np.ndarray], augmentations: List[st
 
 def separate(S: Tuple[np.ndarray, np.ndarray, np.ndarray], by: Optional[str] = None) -> Dict:
     _, _, info = S
-
     indices = {}
 
     if by is None:

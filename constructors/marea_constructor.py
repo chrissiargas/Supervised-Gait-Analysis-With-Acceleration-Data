@@ -55,7 +55,7 @@ def get_hsto(subject_data, GT, foot_event_as_string, activity_as_string):
 class marea:
     def __init__(self):
         self.source_path = os.path.join(
-            os.path.expanduser('~'),
+            '/media/crizo/X9 Pro/',
             'datasets',
             'MAREA'
         )

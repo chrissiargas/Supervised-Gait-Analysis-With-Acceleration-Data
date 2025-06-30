@@ -2,6 +2,7 @@ import argparse
 import os.path
 import yaml
 from os.path import dirname, abspath
+from typing import Optional
 
 class Parser:
     def __init__(self):
@@ -32,6 +33,55 @@ class Parser:
             type=dict,
             help='pre_processing & training arguments'
         )
+
+    def as_str(self, theme: Optional[str] = None, learning: str = 'sl', with_event: bool = True) -> str:
+
+        if learning == 'sl':
+            if theme is None:
+                out = f'{self.test_hold_out}-'
+
+            elif theme == 'preprocessing':
+                out = (f'{self.test_hold_out}-'
+                       f'{self.orient_method}-'
+                       f'{self.include_g}-'
+                       f'{self.features}-'
+                       f'{self.filter}-'
+                       f'{self.duration}-'
+                       f'{self.stride}-')
+
+            elif theme == 'task':
+                out = (f'{self.test_hold_out}-'
+                       f'{self.task}-'
+                       f'{self.targets}-'
+                       f'{self.target_oversampling}')
+
+            elif theme == 'model':
+                out = (f'{self.test_hold_out}-'
+                       f'{self.architecture}-'
+                       f'{self.head}-'
+                       f'{self.loss}')
+
+            else:
+                out = (f'{self.test_hold_out}-'
+                       f'{theme}')
+
+            if with_event:
+                out = (f'{str(self.labels)}-'
+                       f'{out}')
+
+            out = 'sl-' + out
+
+        elif learning == 'ssl':
+            if theme is None:
+                out = (f'{self.task}-'
+                       f'{self.targets}-'
+                       f'{str(self.labels)}-'
+                       f'{self.test_hold_out}-')
+
+            out = 'ssl-' + out
+
+        return out
+
 
 
     def get_args(self):
@@ -90,9 +140,6 @@ class Parser:
         self.augmentations = args.main_args['augmentations']
         self.xyz = args.main_args['xyz']
 
-        self.batch_size = args.main_args['batch_size']
-
-
         self.architecture = args.main_args['architecture']
         self.rotation_layer = args.main_args['rotation_layer']
         self.epochs = args.main_args['epochs']
@@ -102,5 +149,13 @@ class Parser:
         self.class_weights = args.main_args['class_weights']
         self.loss = args.main_args['loss']
         self.metric = args.main_args['metric']
+
+        self.anchor = args.main_args['anchor']
+        self.target = args.main_args['target']
+        self.batch_method = args.main_args['batch_method']
+        self.batch_size = args.main_args['batch_size']
+        self.neg_sub = args.main_args['negative_subject']
+        self.neg_pos = args.main_args['negative_position']
+        self.same_sub = True if self.neg_sub == 'same' else False
 
 

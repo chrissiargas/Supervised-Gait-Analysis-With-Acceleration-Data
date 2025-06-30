@@ -98,7 +98,7 @@ def form(x: pd.DataFrame, length: int, step: int, task: str,
 
     return x_segs, y_targets, t_info, sizes, channels
 
-def finalize(x: pd.DataFrame, length: int, step: int, task: str,
+def sl_finalize(x: pd.DataFrame, length: int, step: int, task: str,
              targets: str, target_pos: str):
 
     if x.shape[0] == 0:
@@ -107,3 +107,53 @@ def finalize(x: pd.DataFrame, length: int, step: int, task: str,
     x = x.copy()
     X, Y, T, sizes, channels = form(x, length, step, task, targets, target_pos)
     return (X, Y, T), sizes, channels
+
+def stack(x: pd.DataFrame, length: int, step: int, anchor: str, target: str,
+          t_target: str, t_pos: str, start: int = 0):
+    x = x.copy()
+
+    groups = x.groupby(['dataset', 'subject_id', 'activity_id'])
+
+    valid_segs = groups.apply(lambda g: segment(g[['irregular']], length, step, start))
+    valid_segs = np.concatenate(valid_segs.values).squeeze()
+    valid_indices = np.argwhere(np.sum(valid_segs, axis=1) == 0).squeeze()
+
+    features = x.columns[x.columns.str.contains('acc|jerk|low|norm|angle|gyr')]
+
+    anchor_feats = features[features.str.contains(anchor)]
+    target_feats = features[features.str.contains(target)]
+
+    if len(anchor_feats) == 0 or len(target_feats) == 0:
+        return None, None, None, None
+
+    channels = {k.replace('_' + anchor, "") : v for v, k in enumerate(anchor_feats)}
+
+    anchor_segs = groups.apply(lambda g: segment(g[anchor_feats], length, step, start))
+    sizes = anchor_segs.apply(lambda g: len(g)).unstack('activity_id').to_dict('index')
+    anchor_segs = np.concatenate(anchor_segs.values)
+
+    target_segs = groups.apply(lambda g: segment(g[target_feats], length, step, start))
+    target_segs = np.concatenate(target_segs.values)
+
+    t_info = form_t(x, length, step, start, t_target, t_pos)
+
+    anchor_segs = anchor_segs[valid_indices]
+    target_segs = target_segs[valid_indices]
+    t_info = t_info[valid_indices]
+
+    anchor_ws = anchor_segs[:, np.newaxis, ...]
+    target_ws = target_segs[:, np.newaxis, ...]
+    pair_segs = np.concatenate((anchor_ws, target_ws), axis=1)
+
+    return pair_segs, t_info, sizes, channels
+
+def ssl_finalize(x: pd.DataFrame, length: int, step: int, anchor: str, target: str,
+                 t_target: str, t_pos: str):
+    if x.shape[0] == 0:
+        return None, None, None
+
+    x = x.copy()
+    X, T, sizes, channels = stack(x, length, step, anchor, target, t_target, t_pos)
+    return (X, T), sizes, channels
+
+

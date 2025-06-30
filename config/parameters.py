@@ -12,6 +12,39 @@ sl_params = {
     'target_oversampling': 2,
     'target_position': 'center',
     'trim_duration': 5,
+    'duration': 2.56,
+    'stride': 2,
+    'features': ['acc_x', 'acc_y', 'acc_z'],
+    'split_type': 'loso',
+    'test_hold_out': [1001, 1022, 1010, 1013],
+    'validation': True,
+    'val_hold_out': [1018, 1014, 1002, 1025],
+    'augmentations': None,
+    'xyz': False,
+
+    'batch_size': 64,
+    'architecture': 'unet',
+    'rotation_layer': None,
+    'optimizer': 'adam',
+    'epochs': 250,
+    'decay_steps': 0,
+    'lr_decay': None,
+    'learning_rate': 0.0001,
+    'head': 'temporal',
+    'class_weights': True,
+    'loss': 'bce',
+    'metric': 'accuracy'
+}
+
+ssl_params = {
+    'checks': None,
+    'orient_method': None,
+    'include_gravity': False,
+    'gravity_cutoff': 0.1,
+    'new_features': None,
+    'filter': None,
+    'filter_cutoff': 10.0,
+    'trim_duration': 5,
     'duration': 4,
     'stride': 4,
     'features': ['acc_x', 'acc_y', 'acc_z'],
@@ -27,12 +60,5 @@ sl_params = {
     'rotation_layer': None,
     'optimizer': 'adam',
     'epochs': 250,
-    'decay_steps': 0,
-    'lr_decay': None,
-    'learning_rate': 0.0001,
-    'head': 'temporal_single',
-    'class_weights': True,
-    'loss': 'tversky',
-    'metric': 'accuracy'
 }
 

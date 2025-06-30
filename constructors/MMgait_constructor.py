@@ -25,7 +25,7 @@ def get_imu_features(from_sensor: str, to_sensor: str) -> Dict:
 class MMgait:
     def __init__(self):
         self.source_path = os.path.join(
-            os.path.expanduser('~'),
+            '/media/crizo/X9 Pro/',
             'datasets',
             'MMgait',
             'data_set'

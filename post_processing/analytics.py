@@ -112,7 +112,6 @@ def get_scores(tp, fp, fn):
 
     return precision, recall, f1_score
 
-
 def get_min_error(w, n):
     w = w.to_numpy()
     e = (n - np.argwhere(w).reshape((-1))).min() if len(np.argwhere(w)) else -1
